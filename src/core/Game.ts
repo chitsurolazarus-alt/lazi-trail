@@ -77,6 +77,7 @@ interface World {
   player: Player;
   chasers: ChaserView;
   backdrop: Backdrop;
+  decor: DecorFactory;
   props: PropField | null;
   effects: Effects;
   pedestrians: Pedestrians | null;
@@ -133,6 +134,8 @@ export class Game {
   /** Dev only: obstacles can't hurt. Toggle from the console via `__lazi.debugGod(true)`. */
   private god = false;
   private stepTimer = 0;
+  private sparkTimer = 0;
+  private warmTimer = 1;
   /** World scroll speed (m/s) this frame, for particles. */
   private worldSpeed = 0;
 
@@ -231,8 +234,18 @@ export class Game {
     score: number;
     coins: number;
     quality: string;
+    drawCalls: number;
+    triangles: number;
+    geometries: number;
+    textures: number;
   } {
+    const info = this.pipeline.renderer.info.render;
+    const memory = this.pipeline.renderer.info.memory;
     return {
+      drawCalls: info.calls,
+      triangles: info.triangles,
+      geometries: memory.geometries,
+      textures: memory.textures,
       state: this.state.current,
       distance: this.score.distance,
       elapsed: this.elapsed,
@@ -245,6 +258,16 @@ export class Game {
   /** Dev helper: run the simulation forward without rendering (`seconds` of game time). */
   debugAdvance(seconds: number, step = 1 / 60): void {
     for (let t = 0; t < seconds; t += step) this.update(step);
+  }
+
+  /** Dev helper: end the run right now, as if Lazi was caught (true) or hit an obstacle (false). */
+  debugCrash(caught: boolean): void {
+    if (caught) {
+      this.chase.phase = 'close';
+      this.chase.gap = CONFIG.chase.closeGap;
+      onStumble(this.chase);
+    }
+    this.crash(caught);
   }
 
   debugGod(on: boolean): void {
@@ -344,6 +367,7 @@ export class Game {
       player,
       chasers,
       backdrop,
+      decor,
       props,
       effects,
       pedestrians,
@@ -477,6 +501,8 @@ export class Game {
     }
 
     const w = this.world;
+    this.warmUpScenery(dt);
+    this.trainSparks(dt);
     w.effects.update(dt, this.worldSpeed, this.rig.camera);
     w.pedestrians?.update(dt, this.travelled);
     w.pigeons?.update(dt, this.travelled);
@@ -629,7 +655,6 @@ export class Game {
         cp.y = c.y;
         if (!coinTouched(box, cp)) continue;
         c.collected = true;
-        c.mesh.visible = false;
         const value = c.kind === 'gold' ? CONFIG.scoring.goldValue : CONFIG.scoring.silverValue;
         this.score = addCoins(this.score, value);
         this.bus.emit('coin', {
@@ -650,6 +675,38 @@ export class Game {
     if (gap < 0.35 && gap > -0.001) {
       o.nearMissed = true;
       this.bus.emit('nearMiss');
+    }
+  }
+
+  /**
+   * Build the street scenery for the later zones a little at a time while the player is busy in
+   * zone 1, so entering a new zone never stalls a frame building geometry.
+   */
+  private warmUpScenery(dt: number): void {
+    this.warmTimer -= dt;
+    if (this.warmTimer > 0) return;
+    this.warmTimer = 0.3;
+    for (let zone = 1; zone < ZONES.length; zone++) {
+      if (this.world.decor.warm(zone)) return;
+    }
+  }
+
+  /** Sparks flying off the wheels of trains that are heading toward Lazi. */
+  private trainSparks(dt: number): void {
+    if (this.world.profile.particles <= 0) return;
+    this.sparkTimer -= dt;
+    if (this.sparkTimer > 0) return;
+    this.sparkTimer = 0.1;
+    for (const chunk of this.world.chunks.chunks) {
+      for (const o of chunk.movers) {
+        if (o.def.kind !== 'trainMoving') continue;
+        // World z of the train's near end; it extends `length` metres further away (-z).
+        const nearZ = this.travelled - o.s;
+        if (nearZ > 6 || nearZ < -110) continue;
+        const z = nearZ - Math.random() * o.def.length;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        this.world.effects.railSparks(o.x + side * 1.0, z);
+      }
     }
   }
 

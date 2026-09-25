@@ -42,6 +42,8 @@ export class RenderPipeline {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1;
+    // Count draw calls per whole frame (all post-processing passes and the shadow pass included).
+    this.renderer.info.autoReset = false;
     this.configureShadows();
     this.buildComposer();
   }
@@ -73,6 +75,7 @@ export class RenderPipeline {
     bloomStrength: number,
   ): void {
     this.time += dt;
+    this.renderer.info.reset();
     if (!this.composer || !this.renderPass) {
       this.renderer.render(scene, camera);
       return;

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config/gameConfig';
 import { ZONES, zoneIndexAt } from '../config/zones';
 import { createRng } from '../core/random';
-import { CoinPool } from '../entities/Coin';
+import { CoinField } from '../entities/Coin';
 import { ObstaclePool, type ObstacleModels } from '../entities/Obstacle';
 import { Chunk } from './Chunk';
 import type { DecorFactory } from './ChunkDecor';
@@ -25,7 +25,8 @@ export class ChunkManager {
   private rng = createRng(1);
 
   private readonly obstaclePool: ObstaclePool;
-  private readonly coinPool = new CoinPool();
+  /** All coins in the world, drawn with two instanced meshes. */
+  readonly coinField = new CoinField();
 
   constructor(
     private readonly parent: THREE.Object3D,
@@ -36,6 +37,7 @@ export class ChunkManager {
   ) {
     this.obstaclePool = new ObstaclePool(obstacleModels, castShadows);
     this.generator = new ObstacleGenerator(this.rng);
+    parent.add(this.coinField.object);
   }
 
   get chunks(): readonly Chunk[] {
@@ -66,7 +68,7 @@ export class ChunkManager {
       this.decor.prepare(zone);
       const chunk = this.spare.pop() ?? new Chunk(this.decor.create());
       const section = this.generator.generate(this.nextStart + L, { ...params, zone });
-      chunk.populate(this.nextStart, zone, section, this.obstaclePool, this.coinPool, this.rng);
+      chunk.populate(this.nextStart, zone, section, this.obstaclePool, this.rng);
       if (this.props) {
         const style = (ZONES[zone] ?? ZONES[0])?.style ?? 'township';
         chunk.propCount = this.props.fill(chunk.props, style, this.rng);
@@ -95,21 +97,19 @@ export class ChunkManager {
     return h;
   }
 
-  /** Spin coins. Cheap: only touches coins still in play. */
+  /** Redraw every coin, spinning by `angle`. Two instanced draw calls in total. */
   animateCoins(angle: number): void {
-    for (const chunk of this.active) {
-      for (const coin of chunk.coins) if (!coin.collected) coin.mesh.rotation.y = angle;
-    }
+    this.coinField.sync(this.active, angle);
   }
 
   private recycle(chunk: Chunk): void {
-    chunk.clear(this.obstaclePool, this.coinPool);
+    chunk.clear(this.obstaclePool);
     chunk.group.removeFromParent();
     this.spare.push(chunk);
   }
 
   dispose(): void {
-    for (const chunk of this.active) chunk.clear(this.obstaclePool, this.coinPool);
+    for (const chunk of this.active) chunk.clear(this.obstaclePool);
     for (const chunk of [...this.active, ...this.spare]) {
       chunk.group.removeFromParent();
       chunk.decor.dispose();
@@ -117,7 +117,7 @@ export class ChunkManager {
     this.active.length = 0;
     this.spare.length = 0;
     this.obstaclePool.dispose();
-    this.coinPool.dispose();
+    this.coinField.dispose();
     this.decor.dispose();
   }
 }

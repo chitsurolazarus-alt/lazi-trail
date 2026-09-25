@@ -171,6 +171,29 @@ export class Effects {
     }
   }
 
+  /** A few sparks flung off a train wheel/rail (world position). */
+  railSparks(x: number, z: number): void {
+    for (let i = 0; i < 4; i++) {
+      const p = this.take(this.sparkParticles, this.sparkCursor++ % CAP_SPARK);
+      this.color.set(Math.random() < 0.5 ? 0xffd27a : 0xfff2cf);
+      spawn(p, {
+        x: x + (Math.random() - 0.5) * 0.2,
+        y: 0.25,
+        z,
+        vx: (Math.random() - 0.5) * 3,
+        vy: 1 + Math.random() * 2.2,
+        vz: (Math.random() - 0.5) * 3,
+        life: 0.3 + Math.random() * 0.25,
+        size: 0.09 + Math.random() * 0.06,
+        grow: 0,
+        gravity: 9,
+        drag: 0.8,
+        c: this.color,
+        spark: true,
+      });
+    }
+  }
+
   /** Advance particles. `worldSpeed` (m/s) scrolls world-bound particles toward the camera. */
   update(dt: number, worldSpeed: number, camera: THREE.Camera): void {
     // Ambient leaves and dust motes drifting across the street.

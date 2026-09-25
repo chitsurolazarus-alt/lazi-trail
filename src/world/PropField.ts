@@ -13,7 +13,7 @@ import { MeshBuilder } from './MeshBuilder';
  * chunk's current scroll offset. No allocation happens while running.
  */
 
-export type PropKind = 'lamp' | 'tree' | 'pole' | 'bin';
+export type PropKind = 'lamp' | 'tree' | 'pole' | 'bin' | 'signal';
 
 interface PartSpec {
   material: MaterialKey;
@@ -65,6 +65,22 @@ function buildPole(): PartSpec[] {
   return [{ material: 'matte', geometry: b.build() }];
 }
 
+/** Traffic light on a pole with an arm reaching over the pavement edge (+x toward the road). */
+function buildSignal(): PartSpec[] {
+  const pole = new MeshBuilder();
+  pole.cylinderY(0, 0, 4.6, 0, 0.09, 0.07, 0x3a3f46, 8);
+  pole.box(0.5, 4.5, 0, 1.0, 0.07, 0.07, 0x3a3f46);
+  pole.box(1.0, 4.05, 0, 0.36, 0.95, 0.3, 0x1c1e22); // head housing
+  // lenses: red on, amber and green dim
+  pole.box(1.0, 4.35, 0.16, 0.2, 0.2, 0.03, 0xff3b30);
+  pole.box(1.0, 4.05, 0.16, 0.2, 0.2, 0.03, 0x6b5a1a);
+  pole.box(1.0, 3.75, 0.16, 0.2, 0.2, 0.03, 0x1f5a34);
+  pole.box(1.0, 4.35, -0.16, 0.2, 0.2, 0.03, 0xff3b30);
+  pole.box(1.0, 4.05, -0.16, 0.2, 0.2, 0.03, 0x6b5a1a);
+  pole.box(1.0, 3.75, -0.16, 0.2, 0.2, 0.03, 0x1f5a34);
+  return [{ material: 'paint', geometry: pole.build() }];
+}
+
 function buildBin(): PartSpec[] {
   const b = new MeshBuilder();
   b.box(0, 0.5, 0, 0.6, 1.0, 0.75, 0x2f7d4a);
@@ -97,6 +113,7 @@ const PLACEMENTS: Record<ZoneStyle, readonly Placement[]> = {
   ],
   city: [
     { kind: 'lamp', perSide: 2, x: [4.3, 4.6] },
+    { kind: 'signal', perSide: 0.4, x: [4.9, 5.2] },
     { kind: 'tree', perSide: 0.5, x: [6.4, 6.9] },
     { kind: 'bin', perSide: 0.6, x: [6.5, 7.1] },
   ],
@@ -126,6 +143,7 @@ export class PropField {
       tree: buildTree,
       pole: buildPole,
       bin: buildBin,
+      signal: buildSignal,
     };
     for (const kind of Object.keys(builders) as PropKind[]) {
       const parts = builders[kind]();
@@ -163,7 +181,9 @@ export class PropField {
           records[o + 1] = side * randRange(rng, p.x[0], p.x[1]);
           records[o + 2] = p.y ?? CURB;
           records[o + 3] = -slot * CONFIG.world.chunkLength;
-          records[o + 4] = p.kind === 'lamp' ? (side === -1 ? 0 : Math.PI) : rng() * Math.PI * 2;
+          // Lamps and signals reach toward the road; everything else faces any which way.
+          const facesRoad = p.kind === 'lamp' || p.kind === 'signal';
+          records[o + 4] = facesRoad ? (side === -1 ? 0 : Math.PI) : rng() * Math.PI * 2;
           records[o + 5] = p.kind === 'tree' ? randRange(rng, 0.6, 0.9) : 1;
           records[o + 6] = rng();
           n++;
@@ -248,6 +268,6 @@ export class PropField {
   }
 }
 
-const KIND_ORDER: readonly PropKind[] = ['lamp', 'tree', 'pole', 'bin'];
+const KIND_ORDER: readonly PropKind[] = ['lamp', 'tree', 'pole', 'bin', 'signal'];
 const kindIndex = (k: PropKind): number => KIND_ORDER.indexOf(k);
 const CURB = 0.18;

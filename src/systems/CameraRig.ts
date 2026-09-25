@@ -24,8 +24,19 @@ export class CameraRig {
     this.camera.lookAt(0, C.lookHeight, C.lookAheadZ);
   }
 
+  /**
+   * Tall (portrait) screens see much less sideways, so the outer lanes would sit on the very
+   * edge. Below `PORTRAIT_ASPECT` the camera pulls back/up and widens its FOV to keep all three
+   * lanes comfortably on screen. 0 on landscape, up to 1 on a narrow phone.
+   */
+  private portrait = 0;
+
   setAspect(aspect: number): void {
     this.camera.aspect = aspect;
+    this.portrait = Math.min(
+      1,
+      Math.max(0, (C.portraitAspect - aspect) / (C.portraitAspect - 0.45)),
+    );
     this.camera.updateProjectionMatrix();
   }
 
@@ -66,13 +77,14 @@ export class CameraRig {
     this.fovPulse = damp(this.fovPulse, 0, 6, dt);
     this.camera.position.set(
       this.x + shakeX,
-      C.height + this.y + shakeY - this.impactDip,
-      C.distance,
+      C.height * (1 + this.portrait * C.portraitPullBack) + this.y + shakeY - this.impactDip,
+      C.distance * (1 + this.portrait * C.portraitPullBack),
     );
     this.lookTarget.set(this.x * 0.6, C.lookHeight + this.y * 0.5, C.lookAheadZ);
     this.camera.lookAt(this.lookTarget);
 
-    const targetFov = lerp(C.fovBase, C.fovMax, speedNorm) + this.fovPulse;
+    const targetFov =
+      lerp(C.fovBase, C.fovMax, speedNorm) + this.fovPulse + this.portrait * C.portraitFovBoost;
     this.fov = damp(this.fov, targetFov, 3, dt);
     if (Math.abs(this.camera.fov - this.fov) > 0.01) {
       this.camera.fov = this.fov;

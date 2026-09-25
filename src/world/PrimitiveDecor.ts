@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { COLORS } from '../config/colors';
 import { CONFIG } from '../config/gameConfig';
 import { ZONES } from '../config/zones';
@@ -7,6 +8,7 @@ import type { ChunkDecor, DecorFactory } from './ChunkDecor';
 
 const W = CONFIG.world;
 const L = W.chunkLength;
+const BUILDINGS = W.buildingsPerSide * 2;
 
 /** Road surface with dashed lane lines, drawn once and shared by every chunk. */
 function createRoadTexture(): THREE.CanvasTexture {
@@ -35,75 +37,89 @@ function createRoadTexture(): THREE.CanvasTexture {
   return texture;
 }
 
-/** Phase 1 look: flat-coloured boxes for buildings. Used on Low quality. */
-class PrimitiveDecor implements ChunkDecor {
-  readonly object = new THREE.Group();
-  private readonly buildings: THREE.Mesh[] = [];
-
-  constructor(private readonly shared: PrimitiveShared) {
-    this.object.add(new THREE.Mesh(shared.roadGeometry, shared.roadMaterial));
-    const sidewalkX = W.roadHalfWidth + W.sidewalkWidth / 2;
-    for (const side of [-1, 1]) {
-      const walk = new THREE.Mesh(shared.sidewalkGeometry, shared.sidewalkMaterial);
-      walk.position.x = side * sidewalkX;
-      this.object.add(walk);
-    }
-    for (let i = 0; i < W.buildingsPerSide * 2; i++) {
-      const b = new THREE.Mesh(shared.buildingGeometry, shared.buildingMaterial(0xffffff));
-      this.buildings.push(b);
-      this.object.add(b);
-    }
-  }
-
-  dress(zoneIndex: number, rng: Rng): void {
-    const palette = (ZONES[zoneIndex] ?? ZONES[0])?.buildings ?? [0xcccccc];
-    const perSide = W.buildingsPerSide;
-    const slot = L / perSide;
-    for (let i = 0; i < this.buildings.length; i++) {
-      const building = this.buildings[i] as THREE.Mesh;
-      const side = i < perSide ? -1 : 1;
-      const index = i % perSide;
-      const width = randRange(rng, 4, 6.5);
-      const height = randRange(rng, 5, 14);
-      const depth = slot - randRange(rng, 0.4, 1.2);
-      building.material = this.shared.buildingMaterial(pickOne(rng, palette));
-      building.scale.set(width, height, depth);
-      building.position.set(
-        side * (W.roadHalfWidth + W.sidewalkWidth + width / 2 + 0.2),
-        0,
-        -(index * slot + slot / 2),
-      );
-    }
-  }
-
-  dispose(): void {
-    this.object.removeFromParent();
-  }
-}
-
 interface PrimitiveShared {
   roadGeometry: THREE.BufferGeometry;
   roadMaterial: THREE.Material;
   sidewalkGeometry: THREE.BufferGeometry;
   sidewalkMaterial: THREE.Material;
   buildingGeometry: THREE.BufferGeometry;
-  buildingMaterial(color: number): THREE.Material;
+  buildingMaterial: THREE.Material;
+}
+
+/**
+ * Phase 1 look: flat-coloured boxes for buildings. Used on Low quality, so it is deliberately
+ * cheap: a chunk is three draw calls (road, sidewalks, and ONE instanced mesh for all buildings).
+ */
+class PrimitiveDecor implements ChunkDecor {
+  readonly object = new THREE.Group();
+  private readonly buildings: THREE.InstancedMesh;
+  private readonly matrix = new THREE.Matrix4();
+  private readonly color = new THREE.Color();
+  private readonly position = new THREE.Vector3();
+  private readonly scale = new THREE.Vector3();
+  private readonly quaternion = new THREE.Quaternion();
+
+  constructor(shared: PrimitiveShared) {
+    this.object.add(new THREE.Mesh(shared.roadGeometry, shared.roadMaterial));
+    this.object.add(new THREE.Mesh(shared.sidewalkGeometry, shared.sidewalkMaterial));
+    this.buildings = new THREE.InstancedMesh(
+      shared.buildingGeometry,
+      shared.buildingMaterial,
+      BUILDINGS,
+    );
+    this.buildings.frustumCulled = false;
+    this.object.add(this.buildings);
+  }
+
+  dress(zoneIndex: number, rng: Rng): void {
+    const palette = (ZONES[zoneIndex] ?? ZONES[0])?.buildings ?? [0xcccccc];
+    const perSide = W.buildingsPerSide;
+    const slot = L / perSide;
+    for (let i = 0; i < BUILDINGS; i++) {
+      const side = i < perSide ? -1 : 1;
+      const index = i % perSide;
+      const width = randRange(rng, 4, 6.5);
+      const height = randRange(rng, 5, 14);
+      const depth = slot - randRange(rng, 0.4, 1.2);
+      this.position.set(
+        side * (W.roadHalfWidth + W.sidewalkWidth + width / 2 + 0.2),
+        0,
+        -(index * slot + slot / 2),
+      );
+      this.scale.set(width, height, depth);
+      this.matrix.compose(this.position, this.quaternion, this.scale);
+      this.buildings.setMatrixAt(i, this.matrix);
+      this.buildings.setColorAt(i, this.color.set(pickOne(rng, palette)));
+    }
+    this.buildings.instanceMatrix.needsUpdate = true;
+    if (this.buildings.instanceColor) this.buildings.instanceColor.needsUpdate = true;
+  }
+
+  dispose(): void {
+    this.buildings.dispose();
+    this.object.removeFromParent();
+  }
 }
 
 export class PrimitiveDecorFactory implements DecorFactory {
   private readonly roadTexture = createRoadTexture();
   private readonly roadMaterial = new THREE.MeshLambertMaterial({ map: this.roadTexture });
   private readonly sidewalkMaterial = new THREE.MeshLambertMaterial({ color: COLORS.sidewalk });
-  private readonly buildingMaterials = new Map<number, THREE.MeshLambertMaterial>();
+  private readonly buildingMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
   private readonly roadGeometry = new THREE.PlaneGeometry(W.roadHalfWidth * 2, L)
     .rotateX(-Math.PI / 2)
     .translate(0, 0, -L / 2);
-  private readonly sidewalkGeometry = new THREE.BoxGeometry(W.sidewalkWidth, 0.25, L).translate(
-    0,
-    0.125 - 0.02,
-    -L / 2,
-  );
+  private readonly sidewalkGeometry: THREE.BufferGeometry;
   private readonly buildingGeometry = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+
+  constructor() {
+    const x = W.roadHalfWidth + W.sidewalkWidth / 2;
+    const walk = (side: number): THREE.BufferGeometry =>
+      new THREE.BoxGeometry(W.sidewalkWidth, 0.25, L).translate(side * x, 0.125 - 0.02, -L / 2);
+    const merged = mergeGeometries([walk(-1), walk(1)]);
+    if (!merged) throw new Error('Failed to build sidewalk geometry');
+    this.sidewalkGeometry = merged;
+  }
 
   create(): ChunkDecor {
     return new PrimitiveDecor({
@@ -112,7 +128,7 @@ export class PrimitiveDecorFactory implements DecorFactory {
       sidewalkGeometry: this.sidewalkGeometry,
       sidewalkMaterial: this.sidewalkMaterial,
       buildingGeometry: this.buildingGeometry,
-      buildingMaterial: (color) => this.material(color),
+      buildingMaterial: this.buildingMaterial,
     });
   }
 
@@ -122,15 +138,6 @@ export class PrimitiveDecorFactory implements DecorFactory {
     return false;
   }
 
-  private material(color: number): THREE.Material {
-    let m = this.buildingMaterials.get(color);
-    if (!m) {
-      m = new THREE.MeshLambertMaterial({ color });
-      this.buildingMaterials.set(color, m);
-    }
-    return m;
-  }
-
   dispose(): void {
     this.roadGeometry.dispose();
     this.sidewalkGeometry.dispose();
@@ -138,7 +145,6 @@ export class PrimitiveDecorFactory implements DecorFactory {
     this.roadTexture.dispose();
     this.roadMaterial.dispose();
     this.sidewalkMaterial.dispose();
-    for (const m of this.buildingMaterials.values()) m.dispose();
-    this.buildingMaterials.clear();
+    this.buildingMaterial.dispose();
   }
 }

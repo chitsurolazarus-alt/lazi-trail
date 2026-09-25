@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { APPROACH_DISTANCE, OBSTACLE_DEFS, laneToX } from '../config/gameConfig';
 import type { Rng } from '../core/random';
-import type { CoinInstance, CoinPool } from '../entities/Coin';
+import type { CoinInstance } from '../entities/Coin';
 import type { ObstacleInstance, ObstaclePool } from '../entities/Obstacle';
 import { movingNearEdge } from '../systems/ObstacleMotion';
 import type { ChunkDecor } from './ChunkDecor';
@@ -24,6 +24,7 @@ export class Chunk {
   ramps: ObstacleInstance[] = [];
   /** Vehicles that drive toward the player. */
   movers: ObstacleInstance[] = [];
+  /** Coins (drawn together by the CoinField). */
   coins: CoinInstance[] = [];
   /** Street furniture records (see PropField), in this chunk's local space. */
   readonly props = new Float32Array(PropField.maxPerChunk * PropField.stride);
@@ -38,7 +39,6 @@ export class Chunk {
     zoneIndex: number,
     section: GeneratedSection,
     obstaclePool: ObstaclePool,
-    coinPool: CoinPool,
     rng: Rng,
   ): void {
     this.start = start;
@@ -61,11 +61,13 @@ export class Chunk {
     }
 
     for (const spec of section.coins) {
-      const mesh = coinPool.acquire(spec.kind);
-      const x = laneToX(spec.lane);
-      mesh.position.set(x, spec.y, -(spec.s - start));
-      this.group.add(mesh);
-      this.coins.push({ kind: spec.kind, x, y: spec.y, s: spec.s, mesh, collected: false });
+      this.coins.push({
+        kind: spec.kind,
+        x: laneToX(spec.lane),
+        y: spec.y,
+        s: spec.s,
+        collected: false,
+      });
     }
   }
 
@@ -75,9 +77,8 @@ export class Chunk {
   }
 
   /** Hand everything spawned in this chunk back to the pools. */
-  clear(obstaclePool: ObstaclePool, coinPool: CoinPool): void {
+  clear(obstaclePool: ObstaclePool): void {
     for (const o of this.obstacles) obstaclePool.release(o.def.kind, o.mesh);
-    for (const c of this.coins) coinPool.release(c.kind, c.mesh);
     this.obstacles.length = 0;
     this.ramps.length = 0;
     this.movers.length = 0;

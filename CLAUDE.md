@@ -5,43 +5,67 @@ Original 3D endless runner (portfolio project by Lazarus Chitsuro, GitHub `chits
 ## Stack
 
 Three.js + Vite + TypeScript (strict), Vitest, ESLint + Prettier. No backend. Deploy: Cloudflare Pages (`npm run build` → `dist/`).
-Commands: `npm run dev | test | build | lint | format`.
+Commands: `npm run dev | test | build | lint | format | assets` (`assets` re-fetches third-party assets, see below).
 
 ## Rules
 
-- All persistence through ONE `SaveManager`, key `lazitrail_save_v1`; every read/write in try/catch; save only at key moments, never per frame.
-- All tunable numbers live in `src/config/gameConfig.ts`.
-- Game logic (scoring, difficulty, obstacle generator, save schema) = pure functions with unit tests in `tests/`.
-- Pool everything that spawns; dispose geometries/materials; cap DPR at 2; pause when tab hidden.
-- Generator must always leave at least one passable path.
+- All persistence through ONE `SaveManager`, key `lazitrail_save_v1` (v2 + migration arrives in Phase 4); every read/write in try/catch; save only at key moments (run end, settings change), never per frame.
+- All tunable numbers live in `src/config/` (`gameConfig.ts`, `zones.ts`, `quality.ts`, `obstacles.ts`).
+- Game logic (scoring, difficulty, obstacle generator, chase, collision, motion, save schema, zone blending) = pure functions with unit tests in `tests/`.
+- Pool everything that spawns; dispose geometries/materials; cap DPR at 2; pause when tab hidden. Repeated things use InstancedMesh or merged geometry (coins, props, low-quality buildings, street kit).
+- Generator must always leave at least one passable path (tested for every zone).
 - UI = HTML/CSS overlay over the canvas; menus keyboard-accessible.
 - No `any` unless justified. Small, meaningful commits per feature.
-
-## Chasers
-A thief and his dog chase Lazi from the start of every run (the thief is after Lazi's bag and medal). Not yet built; details come with the Phase 2 text.
+- Only CC0/CC-BY assets and royalty-free audio, every one logged in `CREDITS.md`. No copyrighted music, brands or characters (all in-game brand/shop names are fictional).
 
 ## Look
 
-Stylised-realistic (updated after Phase 1): PBR materials, real textures, detailed buildings, HDRI lighting, soft shadows, post-processing — still 60fps on mid-range phones. Phase 1 primitives stay as low-quality fallbacks. Orange `#FF7A1A`, Deep Blue `#0B2A5B`, white/off-white text. Credit "Built by Lazarus Chitsuro" → https://github.com/chitsurolazarus-alt on menu + game over.
+Stylised-realistic: PBR materials (Poly Haven textures), HDRI image-based lighting, ACES tone mapping, soft sun shadows (High), bloom/FXAA/SMAA/vignette/speed lines, height fog, per-zone skies. Brand colours Orange `#FF7A1A`, Deep Blue `#0B2A5B`, white/off-white text. Credit "Built by Lazarus Chitsuro" → https://github.com/chitsurolazarus-alt on menu + game over.
 Zones: 1 Township Market (0–1000m), 2 City Streets (1000–2500m), 3 Train Yard (2500–4500m), 4 Stadium Approach (4500m+).
+
+## Graphics quality (Low / Medium / High)
+
+Profiles in `src/config/quality.ts`. Auto-detected on first run (phones/tablets → Medium, very weak → Low, else High), changed in Settings, saved in the save file. Changing quality rebuilds the world (`Game.setQuality`).
+
+- **Low**: Phase 1 primitive models (`entities/models.ts`, `PrimitiveDecor`, `PrimitiveChasers`, `PrimitivePlayerView`), no PBR/HDRI/shadows/post, ~45 draw calls.
+- **Medium**: full PBR world + rigged characters + IBL, blob shadows, FXAA + vignette + speed effects, ~160 draw calls.
+- **High**: adds shadow map, bloom, SMAA, more pedestrians/pigeons, cloud shadows.
+
+## Chasers
+
+A thief and his dog chase Lazi (she carries a sports bag and medal). Pure logic in `systems/ChaseSystem.ts` + `PathHistory.ts` (they replay Lazi's exact route so they never clip obstacles); visuals in `entities/Chasers.ts`. Second stumble while they are close = caught; front hit on an obstacle = they run in and snatch the bag.
 
 ## Structure
 
 ```
 src/
-  main.ts
-  core/      Game, GameLoop, StateMachine, EventBus, Input, AssetLoader
-  world/     ChunkManager, ZoneManager, ObstacleGenerator, ObjectPool, Environment
-  entities/  Player, Obstacle, Coin, PowerUp
-  systems/   Collision, Scoring, Difficulty, PowerUpSystem, Audio, CameraRig
-  save/      SaveManager, schema
-  ui/        overlay screens + HUD
-  config/    gameConfig, zones, colors
-tests/       scoring, difficulty, obstacleGenerator, saveManager
-public/assets/{models,audio,textures}
+  main.ts                bootstrap: save, first-run quality, Game.create
+  core/                  Game (orchestrator), GameLoop, StateMachine, EventBus, Input, AssetLoader, math, random, events
+  world/                 ChunkManager, Chunk, ChunkDecor, StreetKit (+ kit/* street styles), MeshBuilder, Materials,
+                         Environment, SkyDome, Atmosphere, ZoneManager, Backdrop (mountain/stadium), PropField (instanced),
+                         Life (pedestrians, pigeons), ObstacleGenerator, ObjectPool, PrimitiveDecor
+  entities/              Player (physics) + PlayerView (Rigged/Primitive), Character (AnimationMixer wrapper), Chasers,
+                         Obstacle(+realisticModels), Coin (instanced CoinField), props, models (primitives)
+  systems/               Collision, Scoring, Difficulty, ChaseSystem, PathHistory, ObstacleMotion, CameraRig,
+                         RenderPipeline (composer), SpeedFxPass, Effects (particles)
+  save/                  SaveManager, schema
+  ui/                    Hud, Screens, Banner, Loading, FpsCounter, styles.css
+  config/                gameConfig, zones, quality, obstacles, colors
+  dev/gallery.ts         model viewer, dev only
+tests/                   scoring, difficulty, obstacleGenerator, obstacleMotion, collision, chase, saveManager, zones
+tools/fetch-assets.mjs   downloads + optimises all third-party assets, rewrites the CREDITS table
+public/assets/           textures/ (WebP), hdri/ (.hdr), models/ (meshopt GLB)
 ```
+
+World convention: the player stays at z = 0 running toward -Z; the world scrolls toward +Z. `s` = track distance in metres.
+
+## Dev tools
+
+- `?quality=low|medium|high` overrides quality for one page load. `?debug` shows the FPS/draw-call overlay in production builds (always on in dev).
+- `?gallery=obstacles|characters|lazi|chasers` (dev server only) opens the model gallery (`cam=x,y,z&look=x,y,z&zone=0..3&pose=…`).
+- In dev, `window.__lazi` exposes `snapshot()`, `debugSkipTo(m)`, `debugAdvance(sec)`, `debugGod(bool)`, `debugCrash(caught)`.
 
 ## Phases
 
-1 Playable core · 2 Look/feel/zones · 3 Menus/shop/saving · 4 Power-ups/missions · 5 Portfolio polish/deploy.
-Phase status: see git log.
+1 Playable core · 2 Realistic world + chase (DONE, awaiting playtest) · 3 Music & sound · 4 Characters, profile & progression (save v2) · 5 Power-ups, polish, deploy.
+Build them in order, one at a time; wait for the owner's "continue" between phases. Phase status: see git log.

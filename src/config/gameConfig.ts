@@ -192,6 +192,12 @@ export const CONFIG = {
     fovBase: 62,
     fovMax: 76,
     smoothing: 9,
+    /** Screens narrower than this width/height ratio get the portrait boost below. */
+    portraitAspect: 1.2,
+    /** Extra field of view (degrees) on the narrowest phone screens. */
+    portraitFovBoost: 14,
+    /** Fraction the camera pulls back and rises by on the narrowest phone screens. */
+    portraitPullBack: 0.42,
   },
 
   crash: {
