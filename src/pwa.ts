@@ -71,7 +71,11 @@ class Pwa {
       this.emit();
     });
 
-    if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+    if (
+      import.meta.env.PROD &&
+      location.protocol.startsWith('http') && // not inside the desktop app
+      'serviceWorker' in navigator
+    ) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined); // offline support is a bonus; never break the game over it
       });

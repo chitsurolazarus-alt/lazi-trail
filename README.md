@@ -9,6 +9,16 @@ Lazi is carrying her medal and her kit bag to the stadium, and a thief with his 
 
 Built by [Lazarus Chitsuro](https://github.com/chitsurolazarus-alt).
 
+## Get it as an app
+
+| Where                                   | How                                                                                                                                                                                                                                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Any browser (Chrome, Edge, Android)** | Open the game and press **Install Lazi Trail** on the main menu (or use the install icon in the address bar). It then opens in its own window and works offline.                                                                                                                           |
+| **iPhone / iPad**                       | Open the game in Safari, tap **Share**, then **Add to Home Screen**.                                                                                                                                                                                                                       |
+| **Windows**                             | Download `Lazi-Trail-Setup-*.exe` (installer) or `Lazi-Trail-Portable-*.exe` (no install) from the [Releases page](https://github.com/chitsurolazarus-alt/lazi-trail/releases). The apps are not code-signed, so Windows may show a SmartScreen notice: choose **More info → Run anyway**. |
+
+Build the Windows app yourself with `npm run dist:win` (output goes to `release/`; if your project folder is synced by OneDrive, pass `--config.directories.output=<another folder>`).
+
 ## Features
 
 - **Four zones** with their own look, sky, ambience and obstacles: Township Market, City Streets, Train Yard, Stadium Approach.
@@ -110,6 +120,8 @@ npm test           # unit tests
 npm run lint       # ESLint
 npm run build      # type-check + production build into dist/
 npm run preview    # serve the production build
+npm run desktop    # run the desktop (Electron) app
+npm run dist:win   # package the Windows installer and portable app
 ```
 
 Dev-only extras: `?quality=low|medium|high`, `?debug` (FPS and draw calls), `?adaptive=0`, `?gallery=obstacles|characters|lazi|chasers|powerups` (dev server), and `window.__lazi` helpers for testing.

@@ -1,0 +1,28 @@
+appId: com.lazarus.lazitrail
+productName: Lazi Trail
+copyright: Copyright (c) 2026 Lazarus Chitsuro
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - desktop/**
+  - build/icon.png
+  - package.json
+asar: true
+compression: normal
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: x64
+    - target: portable
+      arch: x64
+portable:
+  artifactName: Lazi-Trail-Portable-${version}.${ext}
+nsis:
+  artifactName: Lazi-Trail-Setup-${version}.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Lazi Trail

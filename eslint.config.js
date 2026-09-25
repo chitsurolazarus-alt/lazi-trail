@@ -3,7 +3,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules'] },
+  { ignores: ['dist', 'node_modules', 'release'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -17,6 +17,12 @@ export default tseslint.config(
   {
     files: ['*.js', '*.config.ts', 'tools/**/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
+  },
+  {
+    // The desktop wrapper is a CommonJS Node/Electron script.
+    files: ['desktop/**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: { ...globals.node, Response: 'readonly' } },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   {
     // The service worker runs in a worker scope, not in the page.
