@@ -18,7 +18,84 @@ import { MaterialLibrary } from '../world/Materials';
  * real lighting so models can be checked up close (and screenshotted).
  * Extra URL params: `cam=x,y,z` and `look=x,y,z` to place the camera, `zone=0..3`.
  */
+/** Render each synth voice and music layer offline and report levels (`?gallery=audio`). */
+async function runAudioReport(): Promise<void> {
+  const [{ MusicEngine }, synth, logic] = await Promise.all([
+    import('../systems/audio/MusicEngine'),
+    import('../systems/audio/synth'),
+    import('../systems/audio/audioLogic'),
+  ]);
+  const rate = 44100;
+  const measure = async (
+    seconds: number,
+    build: (ctx: OfflineAudioContext, dest: AudioNode) => void,
+  ): Promise<{ peak: number; rms: number; nan: boolean }> => {
+    const ctx = new OfflineAudioContext(1, rate * seconds, rate);
+    build(ctx, ctx.destination);
+    const data = (await ctx.startRendering()).getChannelData(0);
+    let peak = 0;
+    let sum = 0;
+    let nan = false;
+    for (const v of data) {
+      if (Number.isNaN(v)) nan = true;
+      peak = Math.max(peak, Math.abs(v));
+      sum += v * v;
+    }
+    return { peak: +peak.toFixed(3), rms: +Math.sqrt(sum / data.length).toFixed(4), nan };
+  };
+  const report: Record<string, unknown> = {};
+  const voices: Record<string, (c: OfflineAudioContext, d: AudioNode) => void> = {
+    jump: (c, d) => synth.jump(c, d, 0.05),
+    slide: (c, d) => synth.slide(c, d, 0.05),
+    whoosh: (c, d) => synth.whoosh(c, d, 0.05),
+    nearMiss: (c, d) => synth.nearMiss(c, d, 0.05),
+    coin0: (c, d) => synth.coin(c, d, 0.05, 0),
+    coin24: (c, d) => synth.coin(c, d, 0.05, 24, true),
+    powerUp: (c, d) => synth.powerUp(c, d, 0.05),
+    fanfare: (c, d) => synth.unlockFanfare(c, d, 0.05),
+    chaChing: (c, d) => synth.chaChing(c, d, 0.05),
+    zoneSwoosh: (c, d) => synth.zoneSwoosh(c, d, 0.05),
+    hooter: (c, d) => synth.taxiHooter(c, d, 0.05),
+    trainHorn: (c, d) => synth.trainHorn(c, d, 0.05),
+    pant: (c, d) => synth.pant(c, d, 0.05),
+    thiefHey: (c, d) => synth.thiefShout(c, d, 0.05, 'hey'),
+    thiefOi: (c, d) => synth.thiefShout(c, d, 0.05, 'oi'),
+    laugh: (c, d) => synth.thiefLaugh(c, d, 0.05),
+    oof: (c, d) => synth.oof(c, d, 0.05),
+    logDrum: (c, d) => synth.logDrum(c, d, 0.05, 33),
+    kick: (c, d) => synth.kick(c, d, 0.05),
+    piano: (c, d) => synth.piano(c, d, 0.05, [57, 60, 64]),
+  };
+  for (const [name, fn] of Object.entries(voices)) report[name] = await measure(2.5, fn);
+
+  // Music: schedule 8 bars of a track at a chosen intensity straight through the engine's scheduler.
+  const music = async (track: 'menu' | 'run' | 'shop', intensity: number): Promise<unknown> =>
+    measure(16, (ctx, dest) => {
+      const engine = new MusicEngine(ctx as unknown as AudioContext, dest);
+      engine.play(track, 0.001);
+      engine.setIntensity(intensity);
+      const e = engine as unknown as {
+        scheduleStep(t: string, l: unknown, s: number, at: number): void;
+        layers: unknown;
+        stepDur: number;
+      };
+      for (let step = 0; step < logic.STEPS_PER_BAR * 8; step++)
+        e.scheduleStep(track, e.layers, step, 0.05 + step * e.stepDur);
+      window.clearInterval((engine as unknown as { timer: number }).timer);
+    });
+  report.music_run_low = await music('run', 0.1);
+  report.music_run_mid = await music('run', 0.5);
+  report.music_run_full = await music('run', 1);
+  report.music_menu = await music('menu', 0);
+  report.music_shop = await music('shop', 0);
+  (window as unknown as { __audioReport: unknown }).__audioReport = report;
+}
+
 export async function runGallery(root: HTMLElement, mode: string): Promise<void> {
+  if (mode === 'audio') {
+    await runAudioReport();
+    return;
+  }
   const params = new URLSearchParams(location.search);
   const vec = (name: string, fallback: [number, number, number]): THREE.Vector3 => {
     const v = params.get(name)?.split(',').map(Number) ?? fallback;

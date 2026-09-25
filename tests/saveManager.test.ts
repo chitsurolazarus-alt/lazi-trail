@@ -50,8 +50,25 @@ describe('sanitizeSave', () => {
     expect(save.settings.musicVolume).toBe(1);
     expect(save.settings.sfxVolume).toBe(defaultSave().settings.sfxVolume);
     expect(save.settings.showControls).toBe(false);
+    expect(save.settings.ambienceVolume).toBe(defaultSave().settings.ambienceVolume);
+    expect(save.settings.muted).toBe(false);
     expect(save.stats.runs).toBe(3);
     expect(save.stats.totalCoins).toBe(0);
+  });
+
+  it('keeps valid audio settings and repairs bad ones', () => {
+    const ok = sanitizeSave({
+      settings: { musicVolume: 0.2, sfxVolume: 0, ambienceVolume: 1, muted: true },
+    });
+    expect(ok.settings).toMatchObject({
+      musicVolume: 0.2,
+      sfxVolume: 0,
+      ambienceVolume: 1,
+      muted: true,
+    });
+    const bad = sanitizeSave({ settings: { ambienceVolume: 'loud', muted: 'yes' } });
+    expect(bad.settings.ambienceVolume).toBe(defaultSave().settings.ambienceVolume);
+    expect(bad.settings.muted).toBe(false);
   });
 
   it('accepts each valid quality level', () => {

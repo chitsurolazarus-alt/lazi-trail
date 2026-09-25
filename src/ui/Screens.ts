@@ -1,5 +1,6 @@
 import { CREDIT } from '../config/gameConfig';
 import { QUALITY_LEVELS, QUALITY_PROFILES, type QualityLevel } from '../config/quality';
+import type { AudioSettings, Channel } from '../systems/audio/AudioManager';
 
 export interface RunSummary {
   score: number;
@@ -16,6 +17,11 @@ export interface ScreenHandlers {
   onRestart: () => void;
   /** Player picked a graphics quality in Settings. */
   onQuality: (level: QualityLevel) => void;
+  getAudio: () => AudioSettings;
+  onVolume: (channel: Channel, value: number) => void;
+  /** Called when a slider is released, to play a sample of that channel. */
+  onVolumePreview: (channel: Channel) => void;
+  onMute: (muted: boolean) => void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -131,11 +137,52 @@ export class Screens {
       group.append(option);
     }
     panel.append(
+      el('h2', 'section', 'Sound'),
+      this.audioControls(),
       el('h2', 'section', 'Graphics quality'),
       group,
       this.actions(button('Back', onBack)),
     );
     group.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
+  }
+
+  /** Music / SFX / Ambience sliders and a mute switch. Sliders apply live and save on release. */
+  private audioControls(): HTMLElement {
+    const box = el('div', 'audio-controls');
+    const current = this.handlers.getAudio();
+
+    const mute = el('label', 'switch');
+    const check = el('input');
+    check.type = 'checkbox';
+    check.checked = current.muted;
+    check.addEventListener('change', () => this.handlers.onMute(check.checked));
+    mute.append(check, el('span', undefined, 'Mute all sound'));
+    box.append(mute);
+
+    const rows: Array<[Channel, string, number]> = [
+      ['music', 'Music', current.musicVolume],
+      ['sfx', 'Sound effects', current.sfxVolume],
+      ['ambience', 'Ambience', current.ambienceVolume],
+    ];
+    for (const [channel, label, value] of rows) {
+      const row = el('label', 'slider');
+      const input = el('input');
+      input.type = 'range';
+      input.min = '0';
+      input.max = '100';
+      input.step = '5';
+      input.value = String(Math.round(value * 100));
+      input.setAttribute('aria-label', `${label} volume`);
+      const out = el('output', undefined, `${input.value}%`);
+      input.addEventListener('input', () => {
+        out.textContent = `${input.value}%`;
+        this.handlers.onVolume(channel, Number(input.value) / 100);
+      });
+      input.addEventListener('change', () => this.handlers.onVolumePreview(channel));
+      row.append(el('span', undefined, label), input, out);
+      box.append(row);
+    }
+    return box;
   }
 
   private open(title: string, subtitle?: string): HTMLElement {

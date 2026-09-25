@@ -19,6 +19,9 @@ export interface SaveSettings {
   quality: QualityLevel | null;
   musicVolume: number;
   sfxVolume: number;
+  ambienceVolume: number;
+  /** Global mute (all channels). */
+  muted: boolean;
   showControls: boolean;
 }
 
@@ -47,7 +50,14 @@ export function defaultSave(): SaveData {
     bestDistance: 0,
     bestZone: 0,
     totalCoins: 0,
-    settings: { quality: null, musicVolume: 0.7, sfxVolume: 0.8, showControls: true },
+    settings: {
+      quality: null,
+      musicVolume: 0.7,
+      sfxVolume: 0.8,
+      ambienceVolume: 0.7,
+      muted: false,
+      showControls: true,
+    },
     stats: { runs: 0, totalCoins: 0, totalDistance: 0 },
     leaderboard: [],
   };
@@ -98,6 +108,8 @@ export function sanitizeSave(raw: unknown): SaveData {
       quality,
       musicVolume: num(settings.musicVolume, base.settings.musicVolume, 0, 1),
       sfxVolume: num(settings.sfxVolume, base.settings.sfxVolume, 0, 1),
+      ambienceVolume: num(settings.ambienceVolume, base.settings.ambienceVolume, 0, 1),
+      muted: typeof settings.muted === 'boolean' ? settings.muted : base.settings.muted,
       showControls:
         typeof settings.showControls === 'boolean'
           ? settings.showControls

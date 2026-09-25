@@ -20,9 +20,10 @@ export class Hud {
   private readonly chaseBar = document.createElement('div');
   private readonly chaseFill = document.createElement('div');
   private readonly pauseButton = document.createElement('button');
+  private readonly muteButton = document.createElement('button');
   private last: Partial<HudValues> = {};
 
-  constructor(onPause: () => void) {
+  constructor(onPause: () => void, onMute: (muted: boolean) => void) {
     this.element.className = 'hud';
     this.element.hidden = true;
 
@@ -55,7 +56,24 @@ export class Hud {
     this.pauseButton.textContent = 'II';
     this.pauseButton.addEventListener('click', onPause);
 
-    this.element.append(left, right, this.pauseButton);
+    this.muteButton.className = 'hud-mute';
+    this.muteButton.type = 'button';
+    this.muteButton.addEventListener('click', () =>
+      onMute(this.muteButton.getAttribute('aria-pressed') !== 'true'),
+    );
+    this.setMuted(false);
+
+    this.element.append(left, right, this.pauseButton, this.muteButton);
+  }
+
+  /** Reflect the current mute state on the speaker button. */
+  setMuted(muted: boolean): void {
+    this.muteButton.setAttribute('aria-pressed', String(muted));
+    this.muteButton.setAttribute('aria-label', muted ? 'Unmute sound' : 'Mute sound');
+    const wave = muted
+      ? '<path d="M16.5 8.5l-1.4 1.4L16.7 11.5l-1.6 1.6 1.4 1.4 1.6-1.6 1.6 1.6 1.4-1.4-1.6-1.6 1.6-1.6-1.4-1.4-1.6 1.6z"/>'
+      : '<path d="M15.5 8.5a5 5 0 010 7l-1.1-1.1a3.4 3.4 0 000-4.8z"/><path d="M18 6a8.5 8.5 0 010 12l-1.1-1.1a6.9 6.9 0 000-9.8z"/>';
+    this.muteButton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/>${wave}</svg>`;
   }
 
   show(visible: boolean): void {

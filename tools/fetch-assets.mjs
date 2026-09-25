@@ -9,6 +9,7 @@
  * HDRIs     -> Poly Haven (CC0), 1k .hdr
  * Models    -> Quaternius via Poly Pizza (CC0), unused animations pruned, meshopt-compressed GLB
  */
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -110,7 +111,81 @@ const fetchBuf = async (url) => {
 const fetchJson = async (url) => JSON.parse((await fetchBuf(url)).toString());
 const kb = (n) => `${(n / 1024).toFixed(0)} KB`;
 
-const credits = { textures: [], hdris: [], models: [] };
+const credits = { textures: [], hdris: [], models: [], audio: [] };
+
+/**
+ * Sound-effect packs (all CC0). Only the clips the game uses are converted, to small mono MP3s
+ * (MP3 plays everywhere, including iOS Safari, which has no Ogg Vorbis).
+ * Music, ambience, coin/jump/whoosh/horn/pant/voice sounds are synthesised in code, not fetched.
+ */
+const AUDIO_PACKS = {
+  impact: {
+    name: 'Kenney Impact Sounds',
+    author: 'Kenney',
+    page: 'https://kenney.nl/assets/impact-sounds',
+    zipPage: 'https://kenney.nl/assets/impact-sounds',
+    dir: 'Audio',
+  },
+  interface: {
+    name: 'Kenney Interface Sounds',
+    author: 'Kenney',
+    page: 'https://kenney.nl/assets/interface-sounds',
+    zipPage: 'https://kenney.nl/assets/interface-sounds',
+    dir: 'Audio',
+  },
+  casino: {
+    name: 'Kenney Casino Audio',
+    author: 'Kenney',
+    page: 'https://kenney.nl/assets/casino-audio',
+    zipPage: 'https://kenney.nl/assets/casino-audio',
+    dir: 'Audio',
+  },
+  creatures: {
+    name: '80 CC0 creature SFX',
+    author: 'rubberduck',
+    page: 'https://opengameart.org/content/80-cc0-creature-sfx',
+    zipUrl: 'https://opengameart.org/sites/default/files/80-CC0-creature-SFX_0.zip',
+    dir: '',
+  },
+};
+
+/** output name -> [pack, source file (without extension)] */
+const AUDIO_CLIPS = {
+  step_tar_0: ['impact', 'footstep_concrete_000'],
+  step_tar_1: ['impact', 'footstep_concrete_001'],
+  step_tar_2: ['impact', 'footstep_concrete_002'],
+  step_tar_3: ['impact', 'footstep_concrete_003'],
+  step_gravel_0: ['impact', 'footstep_snow_000'],
+  step_gravel_1: ['impact', 'footstep_snow_001'],
+  step_gravel_2: ['impact', 'footstep_snow_002'],
+  step_wood_0: ['impact', 'footstep_wood_000'],
+  step_wood_1: ['impact', 'footstep_wood_001'],
+  step_wood_2: ['impact', 'footstep_wood_002'],
+  step_metal_0: ['impact', 'impactMetal_light_000'],
+  step_metal_1: ['impact', 'impactMetal_light_001'],
+  step_metal_2: ['impact', 'impactMetal_light_002'],
+  land_0: ['impact', 'impactSoft_medium_000'],
+  land_1: ['impact', 'impactSoft_medium_001'],
+  land_heavy: ['impact', 'impactSoft_heavy_000'],
+  stumble_0: ['impact', 'impactPunch_medium_000'],
+  stumble_1: ['impact', 'impactSoft_heavy_001'],
+  crash_metal: ['impact', 'impactMetal_heavy_000'],
+  crash_wood: ['impact', 'impactWood_heavy_000'],
+  crash_plank: ['impact', 'impactPlank_medium_000'],
+  clank_0: ['impact', 'impactMetal_heavy_002'],
+  clank_1: ['impact', 'impactMetal_light_003'],
+  bark_0: ['creatures', 'barking_01'],
+  bark_1: ['creatures', 'barking_02'],
+  ui_click: ['interface', 'click_003'],
+  ui_select: ['interface', 'select_002'],
+  ui_back: ['interface', 'back_002'],
+  ui_confirm: ['interface', 'confirmation_001'],
+  ui_error: ['interface', 'error_004'],
+  ui_toggle: ['interface', 'toggle_002'],
+  cash_0: ['casino', 'chips-collide-1'],
+  cash_1: ['casino', 'chips-handle-2'],
+  cash_2: ['casino', 'chips-stack-3'],
+};
 
 async function authorsOf(id) {
   const info = await fetchJson(`https://api.polyhaven.com/info/${id}`);
@@ -188,6 +263,49 @@ async function doModels() {
   }
 }
 
+async function doAudio() {
+  const outDir = path.join(OUT, 'audio', 'sfx');
+  await fs.mkdir(outDir, { recursive: true });
+  const cache = path.join(ROOT, 'node_modules', '.cache', 'lazi-audio');
+  await fs.mkdir(cache, { recursive: true });
+  const { default: ffmpeg } = await import('ffmpeg-static');
+  const { execFile } = await import('node:child_process');
+  const run = (args) =>
+    new Promise((resolve, reject) =>
+      execFile(ffmpeg, args, (err, _o, stderr) => (err ? reject(new Error(stderr)) : resolve())),
+    );
+
+  const missing = Object.entries(AUDIO_CLIPS).filter(([name]) => FORCE || !existsSync(path.join(outDir, `${name}.mp3`)));
+  const needed = new Set(missing.map(([, [pack]]) => pack));
+  const dirs = {};
+  for (const [key, pack] of Object.entries(AUDIO_PACKS)) {
+    credits.audio.push({ key, ...pack });
+    if (!needed.has(key)) continue;
+    const zipPath = path.join(cache, `${key}.zip`);
+    const extracted = path.join(cache, key);
+    if (!existsSync(extracted)) {
+      let url = pack.zipUrl;
+      if (!url) {
+        const html = (await fetchBuf(pack.zipPage)).toString();
+        url = html.match(/https?:\/\/[^"' ]+\.zip/)?.[0];
+        if (!url) throw new Error(`No zip link on ${pack.zipPage}`);
+      }
+      await fs.writeFile(zipPath, await fetchBuf(url));
+      await fs.mkdir(extracted, { recursive: true });
+      const { default: AdmZip } = await import('adm-zip');
+      new AdmZip(zipPath).extractAllTo(extracted, true);
+    }
+    dirs[key] = path.join(extracted, pack.dir);
+  }
+  for (const [name, [pack, file]] of missing) {
+    const src = path.join(dirs[pack], `${file}.ogg`);
+    const out = path.join(outDir, `${name}.mp3`);
+    await run(['-y', '-loglevel', 'error', '-i', src, '-ac', '1', '-ar', '44100', '-b:a', '80k', out]);
+    const size = (await fs.stat(out)).size;
+    console.log(`audio ${name}.mp3  ${kb(size)}`);
+  }
+}
+
 const MARK_START = '<!-- ASSETS:START -->';
 const MARK_END = '<!-- ASSETS:END -->';
 
@@ -204,6 +322,11 @@ async function writeCredits() {
       `| HDRI "${h.name}" (${h.key} sky) | ${h.authors} | [Poly Haven](https://polyhaven.com/a/${h.id}) | CC0 1.0 |`,
     );
   }
+  for (const a of credits.audio) {
+    rows.push(
+      `| Sound effects: ${a.name} (${Object.values(AUDIO_CLIPS).filter(([p]) => p === a.key).length} clips) | ${a.author} | [${a.page.includes('kenney') ? 'Kenney' : 'OpenGameArt'}](${a.page}) | CC0 1.0 |`,
+    );
+  }
   for (const m of credits.models) {
     rows.push(
       `| 3D model "${m.name}" (${m.key}) | Quaternius | [Poly Pizza](https://poly.pizza/m/${m.pizzaId}) | CC0 1.0 |`,
@@ -218,6 +341,7 @@ async function writeCredits() {
   await fs.writeFile(file, next);
 }
 
+await doAudio();
 await doTextures();
 await doHdris();
 await doModels();

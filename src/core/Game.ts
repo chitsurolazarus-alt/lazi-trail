@@ -8,6 +8,10 @@ import { Chasers, type ChaseContext, type ChaserView } from '../entities/Chasers
 import { PrimitiveChasers } from '../entities/PrimitiveChasers';
 import { PrimitivePlayerView } from '../entities/PrimitivePlayerView';
 import { Effects } from '../systems/Effects';
+import { AudioDirector } from '../systems/audio/AudioDirector';
+import { AudioManager, type AudioSettings } from '../systems/audio/AudioManager';
+import { footstepSurface, stepInterval } from '../systems/audio/audioLogic';
+import { Vector3 } from 'three';
 import { Pedestrians, Pigeons } from '../world/Life';
 import { RiggedPlayerView } from '../entities/RiggedPlayerView';
 import {
@@ -100,6 +104,10 @@ export class Game {
   private readonly screens: Screens;
   private readonly loading = new LoadingScreen();
   private readonly banner = new Banner();
+  private readonly audio: AudioManager;
+  private readonly director: AudioDirector;
+  private audioSaveTimer = 0;
+  private readonly cameraForward = new Vector3();
   private readonly zones = new ZoneManager();
   private readonly fps = FpsCounter.enabled() ? new FpsCounter() : null;
   private readonly input: Input;
@@ -160,13 +168,38 @@ export class Game {
     canvas.className = 'game-canvas';
     this.pipeline = new RenderPipeline(canvas, QUALITY_PROFILES[level]);
 
-    this.hud = new Hud(() => this.pause());
+    const s = save.current.settings;
+    this.audio = new AudioManager(
+      {
+        musicVolume: s.musicVolume,
+        sfxVolume: s.sfxVolume,
+        ambienceVolume: s.ambienceVolume,
+        muted: s.muted,
+      },
+      (state) => this.persistAudio(state),
+    );
+    // Browsers only allow sound after a user gesture: the first tap or key press starts audio.
+    this.audio.installUnlock(window);
+    this.director = new AudioDirector(this.audio, this.bus);
+
+    this.hud = new Hud(
+      () => this.pause(),
+      (muted) => this.setMuted(muted),
+    );
+    this.hud.setMuted(s.muted);
     this.screens = new Screens({
       onStart: () => this.startRun(),
       onResume: () => this.resume(),
       onRestart: () => this.startRun(),
       onQuality: (q) => void this.setQuality(q),
+      getAudio: () => ({ ...this.audio.settings }),
+      onVolume: (channel, value) => this.audio.setVolume(channel, value),
+      onVolumePreview: (channel) => {
+        if (channel === 'sfx') this.director.ui('select');
+      },
+      onMute: (muted) => this.setMuted(muted),
     });
+    root.addEventListener('click', this.onUiClick);
     this.screens.setQuality(level);
     root.append(
       canvas,
@@ -202,6 +235,7 @@ export class Game {
     await game.buildWorld(level, (t, label) => game.loading.set(t, label));
     game.resetRun();
     game.screens.showReady();
+    game.director.menu();
     game.busy = false;
     game.loading.hide();
     game.loop = new GameLoop(
@@ -238,6 +272,7 @@ export class Game {
     triangles: number;
     geometries: number;
     textures: number;
+    audio: { unlocked: boolean; track: string | null; samplesReady: boolean; muted: boolean };
   } {
     const info = this.pipeline.renderer.info.render;
     const memory = this.pipeline.renderer.info.memory;
@@ -246,6 +281,12 @@ export class Game {
       triangles: info.triangles,
       geometries: memory.geometries,
       textures: memory.textures,
+      audio: {
+        unlocked: this.audio.unlocked,
+        track: this.audio.music?.current ?? null,
+        samplesReady: this.audio.samples?.ready ?? false,
+        muted: this.audio.settings.muted,
+      },
       state: this.state.current,
       distance: this.score.distance,
       elapsed: this.elapsed,
@@ -287,6 +328,9 @@ export class Game {
   dispose(): void {
     this.loop?.stop();
     this.input.dispose();
+    this.root.removeEventListener('click', this.onUiClick);
+    this.director.dispose();
+    this.audio.dispose();
     this.resizeObserver.disconnect();
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.bus.clear();
@@ -402,17 +446,45 @@ export class Game {
     this.screens.hide();
     this.hud.show(true);
     this.banner.show(ZoneManager.bannerText(this.currentZone()));
+    this.director.runStart();
   }
 
   private pause(): void {
     if (!this.state.transition('paused')) return;
     this.screens.showPaused();
+    this.director.pause();
   }
 
   private resume(): void {
     if (!this.state.transition('playing')) return;
     this.screens.hide();
+    this.director.resume();
   }
+
+  private setMuted(muted: boolean): void {
+    this.audio.setMuted(muted);
+    this.hud.setMuted(muted);
+    this.director.ui('toggle');
+  }
+
+  /** Save volume/mute changes shortly after the last one (sliders fire many events while dragged). */
+  private persistAudio(state: AudioSettings): void {
+    window.clearTimeout(this.audioSaveTimer);
+    this.audioSaveTimer = window.setTimeout(() => {
+      this.save.updateSettings({
+        musicVolume: state.musicVolume,
+        sfxVolume: state.sfxVolume,
+        ambienceVolume: state.ambienceVolume,
+        muted: state.muted,
+      });
+    }, 400);
+  }
+
+  /** Button click sounds for every menu/HUD control (delegated so new screens get them for free). */
+  private onUiClick = (event: MouseEvent): void => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('.btn, .radio, .hud-pause')) this.director.ui('click');
+  };
 
   private resetRun(): void {
     this.travelled = 0;
@@ -452,6 +524,7 @@ export class Game {
     this.bus.emit('crash');
     this.crashTime = 0;
     this.finishRun();
+    this.director.runEnd(caught, this.runRecord.newRecord);
   }
 
   /** Save the run's result (once). */
@@ -509,6 +582,25 @@ export class Game {
     w.env.update(this.travelled, this.rig.camera.position, this.clock, this.travelled);
     w.backdrop.update(this.rig.camera, this.travelled, w.env.atmosphere);
     w.materials?.update(this.clock, w.env.atmosphere.night);
+    this.updateAudio(dt);
+  }
+
+  private updateAudio(dt: number): void {
+    const cam = this.rig.camera;
+    cam.getWorldDirection(this.cameraForward);
+    this.director.update({
+      dt,
+      playing: this.state.is('playing'),
+      speedNorm: this.speed / CONFIG.difficulty.maxSpeed,
+      chase: chaseMeter(this.chase),
+      chasePhase: this.chase.phase,
+      distance: this.travelled,
+      travelled: this.travelled,
+      playerX: this.world.player.x,
+      camera: cam.position,
+      cameraForward: this.cameraForward,
+      chunks: this.world.chunks.chunks,
+    });
   }
 
   private updatePlaying(dt: number): void {
@@ -717,8 +809,14 @@ export class Game {
     this.stepTimer -= dt;
     if (this.stepTimer > 0) return;
     const speedNorm = this.speed / CONFIG.difficulty.maxSpeed;
-    this.stepTimer = 0.34 - 0.16 * speedNorm;
+    this.stepTimer = stepInterval(speedNorm);
     this.world.effects.dust(p.x, ground, 0.3, p.isSliding ? 1.4 : 0.55);
+    if (!p.isSliding) {
+      this.director.footstep(
+        footstepSurface(this.currentZone().ground, ground, p.onRoof),
+        speedNorm,
+      );
+    }
   }
 
   private onLand(impact: number): void {
@@ -779,7 +877,12 @@ export class Game {
   };
 
   private onVisibilityChange = (): void => {
-    if (document.hidden && this.state.is('playing')) this.pause();
+    if (document.hidden) {
+      if (this.state.is('playing')) this.pause();
+      this.audio.suspend();
+    } else {
+      this.audio.resume();
+    }
   };
 
   private resize(): void {

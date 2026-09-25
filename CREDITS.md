@@ -24,6 +24,10 @@ Built by [Lazarus Chitsuro](https://github.com/chitsurolazarus-alt).
 | HDRI "Kloofendal 48d Partly Cloudy (Pure Sky)" (midday sky) | Greg Zaal, Jarod Guest | [Poly Haven](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky) | CC0 1.0 |
 | HDRI "Mpumalanga Veld (Pure Sky)" (golden sky) | Greg Zaal, Jarod Guest | [Poly Haven](https://polyhaven.com/a/mpumalanga_veld_puresky) | CC0 1.0 |
 | HDRI "Kloppenheim 06 (Pure Sky)" (evening sky) | Greg Zaal, Jarod Guest | [Poly Haven](https://polyhaven.com/a/kloppenheim_06_puresky) | CC0 1.0 |
+| Sound effects: Kenney Impact Sounds (23 clips) | Kenney | [Kenney](https://kenney.nl/assets/impact-sounds) | CC0 1.0 |
+| Sound effects: Kenney Interface Sounds (6 clips) | Kenney | [Kenney](https://kenney.nl/assets/interface-sounds) | CC0 1.0 |
+| Sound effects: Kenney Casino Audio (3 clips) | Kenney | [Kenney](https://kenney.nl/assets/casino-audio) | CC0 1.0 |
+| Sound effects: 80 CC0 creature SFX (2 clips) | rubberduck | [OpenGameArt](https://opengameart.org/content/80-cc0-creature-sfx) | CC0 1.0 |
 | 3D model "Casual Character" (lazi) | Quaternius | [Poly Pizza](https://poly.pizza/m/kZ3DmIoGip) | CC0 1.0 |
 | 3D model "Hoodie Character" (thief) | Quaternius | [Poly Pizza](https://poly.pizza/m/gKLBoRsyKe) | CC0 1.0 |
 | 3D model "Shiba Inu" (dog) | Quaternius | [Poly Pizza](https://poly.pizza/m/y4wdQpg767) | CC0 1.0 |
