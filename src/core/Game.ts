@@ -378,7 +378,12 @@ export class Game {
     this.travelled += meters;
     this.score = advanceDistance(this.score, meters);
 
-    w.player.update(dt, this.speed / CONFIG.difficulty.maxSpeed, true);
+    w.player.update(
+      dt,
+      this.speed / CONFIG.difficulty.maxSpeed,
+      true,
+      w.chunks.groundAt(w.player.x, this.travelled),
+    );
     this.updateZone();
     w.chunks.update(this.travelled, difficulty);
     this.checkCollisions();
@@ -415,13 +420,7 @@ export class Game {
   private render(dt: number): void {
     if (this.busy) return;
     const w = this.world;
-    this.pipeline.render(
-      w.env.scene,
-      this.rig.camera,
-      dt,
-      this.fxSpeed(),
-      w.env.atmosphere.bloom,
-    );
+    this.pipeline.render(w.env.scene, this.rig.camera, dt, this.fxSpeed(), w.env.atmosphere.bloom);
     this.fps?.tick(dt, this.pipeline.renderer.info, this.level);
   }
 
@@ -461,6 +460,7 @@ export class Game {
         ob.halfWidth = o.def.halfWidth;
         ob.yMin = o.def.yMin;
         ob.yMax = o.def.yMax;
+        ob.ramp = o.def.ramp?.length ?? 0;
 
         const hit = testObstacleHit(box, ob);
         if (hit === 'none') continue;

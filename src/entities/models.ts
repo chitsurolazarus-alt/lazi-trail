@@ -155,11 +155,71 @@ function taxi(): THREE.BufferGeometry {
   return merge(parts);
 }
 
+/** Sloped slab rising toward -Z, used for ramps (far end on the ground, near end at `height`). */
+function rampSlab(
+  width: number,
+  height: number,
+  length: number,
+  zEnd: number,
+  color: number,
+): THREE.BufferGeometry {
+  const slope = Math.hypot(length, height);
+  const geo = new THREE.BoxGeometry(width, 0.16, slope);
+  geo.rotateX(Math.atan2(height, length));
+  geo.translate(0, height / 2, zEnd + length / 2);
+  return paint(geo, color);
+}
+
+function barrier(): THREE.BufferGeometry {
+  const parts = [
+    box(0.12, 0.9, 0.5, COLORS.metal, -0.8, 0.45, 0),
+    box(0.12, 0.9, 0.5, COLORS.metal, 0.8, 0.45, 0),
+  ];
+  for (let i = 0; i < 2; i++) {
+    for (let j = 0; j < 8; j++) {
+      parts.push(
+        box(
+          0.23,
+          0.3,
+          0.1,
+          j % 2 === 0 ? COLORS.orange : COLORS.white,
+          -0.8 + j * 0.23 + 0.1,
+          0.55 + i * 0.32,
+          0.03,
+        ),
+      );
+    }
+  }
+  return merge(parts);
+}
+
+function taxiRamp(): THREE.BufferGeometry {
+  return merge([taxi(), rampSlab(1.9, 2.4, 8, 2.75, COLORS.darkWood)]);
+}
+
+function trainBody(withRamp: boolean): THREE.BufferGeometry {
+  const parts = [
+    box(2.3, 3.0, 20, 0xd7dade, 0, 1.9, 0),
+    box(2.34, 0.5, 20.02, COLORS.deepBlue, 0, 0.95, 0),
+    box(2.36, 0.2, 20.04, COLORS.orange, 0, 1.4, 0),
+    box(2.1, 0.2, 20, 0xb9bec5, 0, 3.5, 0),
+    box(2.0, 0.5, 20, COLORS.tyre, 0, 0.3, 0),
+  ];
+  for (let i = -4; i <= 4; i++) parts.push(box(2.38, 0.8, 1.4, COLORS.glass, 0, 2.5, i * 2.1));
+  if (withRamp) parts.push(rampSlab(2.0, 3.6, 12, 10, COLORS.darkWood));
+  return merge(parts);
+}
+
 const OBSTACLE_BUILDERS: Readonly<Record<ObstacleKind, () => THREE.BufferGeometry>> = {
   stall,
   cart,
   awning,
+  barrier,
   taxi,
+  taxiRamp,
+  taxiMoving: taxi,
+  trainParked: () => trainBody(true),
+  trainMoving: () => trainBody(false),
 };
 
 export function buildObstacleGeometry(kind: ObstacleKind): THREE.BufferGeometry {

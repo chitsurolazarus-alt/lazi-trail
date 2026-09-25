@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { OBSTACLE_DEFS, laneToX } from '../config/gameConfig';
+import { APPROACH_DISTANCE, OBSTACLE_DEFS, laneToX } from '../config/gameConfig';
 import type { Rng } from '../core/random';
 import type { CoinInstance, CoinPool } from '../entities/Coin';
 import type { ObstacleInstance, ObstaclePool } from '../entities/Obstacle';
+import { movingNearEdge } from '../systems/ObstacleMotion';
 import type { ChunkDecor } from './ChunkDecor';
 import type { GeneratedSection } from './ObstacleGenerator';
 
@@ -18,6 +19,10 @@ export class Chunk {
   start = 0;
   zoneIndex = 0;
   obstacles: ObstacleInstance[] = [];
+  /** Obstacles with a walkable ramp/roof (for ground-height queries). */
+  ramps: ObstacleInstance[] = [];
+  /** Vehicles that drive toward the player. */
+  movers: ObstacleInstance[] = [];
   coins: CoinInstance[] = [];
 
   constructor(readonly decor: ChunkDecor) {
@@ -40,9 +45,15 @@ export class Chunk {
       const def = OBSTACLE_DEFS[spec.kind];
       const mesh = obstaclePool.acquire(spec.kind);
       const x = laneToX(spec.lane);
-      mesh.position.set(x, 0, -(spec.s + def.length / 2 - start));
+      // Moving vehicles wait ahead until the player is close, then drive toward Lazi (facing her).
+      const s = def.moving ? spec.s + def.moving.closing * APPROACH_DISTANCE : spec.s;
+      mesh.position.set(x, 0, -(s + def.length / 2 - start));
+      mesh.rotation.y = def.moving ? Math.PI : 0;
       this.group.add(mesh);
-      this.obstacles.push({ def, s: spec.s, x, mesh, hit: false });
+      const instance: ObstacleInstance = { def, s, anchorS: spec.s, x, mesh, hit: false };
+      this.obstacles.push(instance);
+      if (def.ramp) this.ramps.push(instance);
+      if (def.moving) this.movers.push(instance);
     }
 
     for (const spec of section.coins) {
@@ -59,7 +70,17 @@ export class Chunk {
     for (const o of this.obstacles) obstaclePool.release(o.def.kind, o.mesh);
     for (const c of this.coins) coinPool.release(c.kind, c.mesh);
     this.obstacles.length = 0;
+    this.ramps.length = 0;
+    this.movers.length = 0;
     this.coins.length = 0;
+  }
+
+  /** Advance every moving vehicle to where it is when the player has run `travelled` metres. */
+  updateMoving(travelled: number): void {
+    for (const o of this.movers) {
+      o.s = movingNearEdge(o.anchorS, (o.def.moving as { closing: number }).closing, travelled);
+      o.mesh.position.z = -(o.s + o.def.length / 2 - this.start);
+    }
   }
 
   /** Scroll the chunk: the player is always at z = 0, so this chunk sits at `travelled - start`. */

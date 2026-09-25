@@ -166,10 +166,14 @@ export class Player {
   }
 
   /** `speedNorm` (0..1) scales the run-cycle rate; `running` is false on menus. */
-  update(dt: number, speedNorm: number, running: boolean): void {
+  /**
+   * `speedNorm` (0..1) scales the run-cycle rate; `running` is false on menus; `ground` is the
+   * height of the walkable surface under Lazi (0 = road, higher on ramps and roofs).
+   */
+  update(dt: number, speedNorm: number, running: boolean, ground = 0): void {
     if (this.alive) {
       this.updateLane(dt);
-      this.updatePhysics(dt);
+      this.updatePhysics(dt, ground);
     } else {
       this.crashTime += dt;
     }
@@ -184,18 +188,27 @@ export class Player {
     this.x = Math.abs(diff) <= step ? target : this.x + Math.sign(diff) * step;
   }
 
-  private updatePhysics(dt: number): void {
+  private updatePhysics(dt: number, ground: number): void {
     if (this.sliding) {
       this.slideTimer -= dt;
       if (this.slideTimer <= 0) this.sliding = false;
     }
     this.bufferedJump = Math.max(0, this.bufferedJump - dt);
-    if (this.grounded) return;
+    if (this.grounded) {
+      if (this.y > ground + 0.08) {
+        // Ran off the end of a roof: start falling.
+        this.grounded = false;
+        this.vy = 0;
+      } else {
+        this.y = ground; // follows ramps up, stays on roofs
+        return;
+      }
+    }
 
     this.vy -= P.gravity * dt;
     this.y += this.vy * dt;
-    if (this.y <= 0) {
-      this.y = 0;
+    if (this.y <= ground && this.vy <= 0) {
+      this.y = ground;
       this.vy = 0;
       this.grounded = true;
       if (this.queuedSlide) {

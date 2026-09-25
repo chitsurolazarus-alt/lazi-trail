@@ -1,12 +1,8 @@
-import {
-  CONFIG,
-  LANE_COUNT,
-  OBSTACLE_DEFS,
-  type ObstacleKind,
-  type ObstacleDef,
-} from '../config/gameConfig';
+import { CONFIG, LANE_COUNT, OBSTACLE_DEFS, type ObstacleKind } from '../config/gameConfig';
+import { ZONE_OBSTACLES, type ObstacleMix } from '../config/obstacles';
 import { lerp, smoothstep01 } from '../core/math';
-import { pickOne, pickWeighted, type Rng } from '../core/random';
+import { pickWeighted, pickOne, type Rng } from '../core/random';
+import { movingSweep } from '../systems/ObstacleMotion';
 
 export type CoinKind = 'silver' | 'gold';
 
@@ -14,7 +10,10 @@ export interface ObstacleSpec {
   kind: ObstacleKind;
   /** Lane index 0..LANE_COUNT-1. */
   lane: number;
-  /** Track distance of the obstacle's near edge (m). */
+  /**
+   * Track distance of the body's near edge (m). For moving vehicles this is the meeting point:
+   * where the vehicle and the player are level.
+   */
   s: number;
 }
 
@@ -29,8 +28,11 @@ export interface CoinSpec {
 
 /** One line of obstacles across the track. `safeLane` is guaranteed free of lane-blockers. */
 export interface Row {
+  /** Near edge of the bodies. */
   s: number;
-  /** Length of the longest obstacle in the row. */
+  /** Space needed in front of `s` for ramps (m). */
+  lead: number;
+  /** Length of the longest body in the row. */
   depth: number;
   safeLane: number;
   obstacles: ObstacleSpec[];
@@ -44,6 +46,8 @@ export interface GeneratorParams {
   coinChance: number;
   maxBlocked: number;
   reactSeconds: number;
+  /** Zone index the section is generated for (selects the obstacle mix). */
+  zone: number;
 }
 
 export interface GeneratedSection {
@@ -52,12 +56,10 @@ export interface GeneratedSection {
   coins: CoinSpec[];
 }
 
-const BLOCK_KINDS: readonly ObstacleKind[] = ['stall', 'taxi'];
-const ACTION_KINDS: readonly ObstacleKind[] = ['cart', 'awning'];
 const COIN_SPACING = 2;
 const COIN_HEIGHT = 1.0;
 
-function def(kind: ObstacleKind): ObstacleDef {
+function def(kind: ObstacleKind) {
   return OBSTACLE_DEFS[kind];
 }
 
@@ -66,17 +68,29 @@ export function blocksLane(o: ObstacleSpec): boolean {
   return def(o.kind).requirement === 'lane';
 }
 
+function pickKind(rng: Rng, list: ObstacleMix['block']): ObstacleKind {
+  const index = pickWeighted(
+    rng,
+    list.map(([, w]) => w),
+  );
+  return (list[index] as readonly [ObstacleKind, number])[0];
+}
+
 /**
  * Builds obstacle rows and coins for the track, in order, as the world asks for more.
  *
  * Path guarantee: every row picks a `safeLane` (moving at most one lane from the previous
  * row's) and never places a lane-blocking obstacle in it, so a route always exists.
+ *
+ * Moving vehicles reserve the lane they sweep through, so nothing else is placed on top of them.
  */
 export class ObstacleGenerator {
   private nextRowS: number;
   private prevEnd: number;
   private prevSafeLane = 1;
   private safeLane = 1;
+  /** Track distance up to which each lane is swept by a moving vehicle. */
+  private readonly reserved: number[] = Array.from({ length: LANE_COUNT }, () => -Infinity);
 
   constructor(
     private readonly rng: Rng,
@@ -86,7 +100,7 @@ export class ObstacleGenerator {
     this.prevEnd = 12;
   }
 
-  /** Generate every row whose near edge lies before `endS`. */
+  /** Generate every row whose start lies before `endS`. */
   generate(endS: number, params: GeneratorParams): GeneratedSection {
     const section: GeneratedSection = { rows: [], obstacles: [], coins: [] };
     while (this.nextRowS < endS) {
@@ -103,36 +117,47 @@ export class ObstacleGenerator {
     return section;
   }
 
-  private buildRow(s: number, p: GeneratorParams): Row {
+  private buildRow(candidate: number, p: GeneratorParams): Row {
     this.safeLane = this.nextSafeLane();
-    const obstacles: ObstacleSpec[] = [];
+    const mix = ZONE_OBSTACLES[Math.min(p.zone, ZONE_OBSTACLES.length - 1)] as ObstacleMix;
+    const picks: Array<{ kind: ObstacleKind; lane: number }> = [];
     let blocked = 0;
 
     const lanes = this.shuffledLanes();
     for (const lane of lanes) {
+      // A lane still being swept by a moving vehicle takes nothing else.
+      if (this.reserved[lane] > candidate) continue;
       if (lane === this.safeLane) {
-        if (this.rng() < p.actionChance) obstacles.push(this.actionObstacle(lane, s));
+        if (this.rng() < p.actionChance) picks.push({ kind: pickKind(this.rng, mix.action), lane });
       } else if (blocked < p.maxBlocked && this.rng() < p.blockChance) {
-        obstacles.push({ kind: pickOne(this.rng, BLOCK_KINDS), lane, s });
+        picks.push({ kind: pickKind(this.rng, mix.block), lane });
         blocked++;
       } else if (this.rng() < p.actionChance * 0.6) {
-        obstacles.push(this.actionObstacle(lane, s));
+        picks.push({ kind: pickKind(this.rng, mix.action), lane });
       }
     }
 
     // A row with nothing in it is pointless: force one blocker beside the safe lane.
-    if (obstacles.length === 0 && p.maxBlocked > 0) {
-      const others = lanes.filter((l) => l !== this.safeLane);
-      obstacles.push({ kind: pickOne(this.rng, BLOCK_KINDS), lane: pickOne(this.rng, others), s });
+    if (picks.length === 0 && p.maxBlocked > 0) {
+      const options = lanes.filter((l) => l !== this.safeLane && this.reserved[l] <= candidate);
+      if (options.length > 0) {
+        picks.push({ kind: pickKind(this.rng, mix.block), lane: pickOne(this.rng, options) });
+      }
     }
 
+    let lead = 0;
     let depth = 0;
-    for (const o of obstacles) depth = Math.max(depth, def(o.kind).length);
-    return { s, depth, safeLane: this.safeLane, obstacles };
-  }
-
-  private actionObstacle(lane: number, s: number): ObstacleSpec {
-    return { kind: pickOne(this.rng, ACTION_KINDS), lane, s };
+    for (const o of picks) {
+      lead = Math.max(lead, def(o.kind).ramp?.length ?? 0);
+      depth = Math.max(depth, def(o.kind).length);
+    }
+    const s = candidate + lead;
+    const obstacles: ObstacleSpec[] = picks.map((o) => ({ ...o, s }));
+    for (const o of obstacles) {
+      const d = def(o.kind);
+      if (d.moving) this.reserved[o.lane] = s + movingSweep(d) + 4;
+    }
+    return { s, lead, depth, safeLane: this.safeLane, obstacles };
   }
 
   /** Safe lane drifts by at most one lane per row. */
@@ -155,41 +180,57 @@ export class ObstacleGenerator {
   /** Coin line along the free path between the previous row and this one. */
   private addGapCoins(out: CoinSpec[], row: Row, p: GeneratorParams): void {
     const from = this.prevEnd + 3.5;
-    const to = row.s - 3;
+    const to = row.s - row.lead - 3;
     if (to - from < 6 || this.rng() >= p.coinChance) return;
     for (let s = from; s <= to; s += COIN_SPACING) {
       // Drift between lanes over the middle 40% of the gap.
       const u = (s - from) / (to - from);
       const t = smoothstep01((u - 0.3) / 0.4);
-      out.push({
-        lane: lerp(this.prevSafeLane, row.safeLane, t),
-        y: COIN_HEIGHT,
-        s,
-        kind: 'silver',
-      });
+      const lane = lerp(this.prevSafeLane, row.safeLane, t);
+      // Don't put coins where a moving vehicle is still driving.
+      if ((this.reserved[Math.round(lane)] ?? -Infinity) > s) continue;
+      out.push({ lane, y: COIN_HEIGHT, s, kind: 'silver' });
     }
   }
 
-  /** Coins that reward taking the action lane: an arc over a cart, or a low line under an awning. */
+  /** Coins that reward taking the action lane, or climbing onto a ramp and running along a roof. */
   private addRowCoins(out: CoinSpec[], row: Row): void {
-    const obstacle = row.obstacles.find((o) => o.lane === row.safeLane);
-    if (!obstacle) return;
-    const length = def(obstacle.kind).length;
-    if (obstacle.kind === 'cart') {
-      const from = row.s - 2;
-      const to = row.s + length + 2;
-      for (let s = from; s <= to; s += 1.6) {
-        const u = (s - from) / (to - from);
-        out.push({
-          lane: row.safeLane,
-          y: COIN_HEIGHT + 1.1 * Math.sin(Math.PI * u),
-          s,
-          kind: 'gold',
-        });
+    const safe = row.obstacles.find((o) => o.lane === row.safeLane);
+    if (safe) {
+      const length = def(safe.kind).length;
+      if (safe.kind === 'cart' || safe.kind === 'barrier') {
+        const from = row.s - 2;
+        const to = row.s + length + 2;
+        for (let s = from; s <= to; s += 1.6) {
+          const u = (s - from) / (to - from);
+          out.push({
+            lane: row.safeLane,
+            y: COIN_HEIGHT + 1.1 * Math.sin(Math.PI * u),
+            s,
+            kind: 'gold',
+          });
+        }
+      } else if (safe.kind === 'awning') {
+        for (let s = row.s - 1; s <= row.s + length + 1; s += 1.4) {
+          out.push({ lane: row.safeLane, y: 0.5, s, kind: 'silver' });
+        }
       }
-    } else if (obstacle.kind === 'awning') {
-      for (let s = row.s - 1; s <= row.s + length + 1; s += 1.4) {
-        out.push({ lane: row.safeLane, y: 0.5, s, kind: 'silver' });
+    }
+
+    // Roof-running reward: a coin line up the ramp and along the roof.
+    for (const o of row.obstacles) {
+      const d = def(o.kind);
+      if (!d.ramp) continue;
+      const start = o.s - d.ramp.length + 1;
+      let i = 0;
+      for (let s = start; s <= o.s + d.length - 1; s += 2.5, i++) {
+        const surface = s < o.s ? (d.yMax * (s - (o.s - d.ramp.length))) / d.ramp.length : d.yMax;
+        out.push({
+          lane: o.lane,
+          y: surface + COIN_HEIGHT,
+          s,
+          kind: i % 5 === 4 ? 'gold' : 'silver',
+        });
       }
     }
   }

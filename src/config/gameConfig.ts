@@ -6,7 +6,17 @@
 
 export const LANE_COUNT = 3;
 
-export type ObstacleKind = 'stall' | 'cart' | 'awning' | 'taxi';
+export type ObstacleKind =
+  | 'stall'
+  | 'cart'
+  | 'awning'
+  | 'barrier'
+  | 'taxi'
+  | 'taxiRamp'
+  | 'taxiMoving'
+  | 'trainParked'
+  | 'trainMoving';
+
 /** What the player must do to get past an obstacle sharing their lane. */
 export type ObstacleRequirement = 'lane' | 'jump' | 'slide';
 
@@ -15,11 +25,22 @@ export interface ObstacleDef {
   readonly requirement: ObstacleRequirement;
   /** Half of the obstacle's width (x). */
   readonly halfWidth: number;
-  /** Extent along the track (z). */
+  /** Extent of the solid body along the track (z). */
   readonly length: number;
   /** Vertical extent of the solid part. */
   readonly yMin: number;
   readonly yMax: number;
+  /**
+   * Parked vehicles you can run onto: a ramp of `rampLength` leads up in front of the body to a
+   * walkable roof at `yMax`. The body is still solid from the front and sides.
+   */
+  readonly ramp?: { readonly length: number };
+  /**
+   * Moving vehicles. `closing` is how fast the vehicle approaches, as a fraction of the player's
+   * speed (0.8 = it drives toward Lazi at 80% of Lazi's own speed). They start moving once the
+   * player is `approachDistance` away, so they always meet the player at their row.
+   */
+  readonly moving?: { readonly closing: number };
 }
 
 export const OBSTACLE_DEFS: Readonly<Record<ObstacleKind, ObstacleDef>> = {
@@ -33,8 +54,55 @@ export const OBSTACLE_DEFS: Readonly<Record<ObstacleKind, ObstacleDef>> = {
     yMin: 1.15,
     yMax: 2.0,
   },
+  barrier: {
+    kind: 'barrier',
+    requirement: 'jump',
+    halfWidth: 1.0,
+    length: 0.6,
+    yMin: 0,
+    yMax: 0.9,
+  },
   taxi: { kind: 'taxi', requirement: 'lane', halfWidth: 1.0, length: 5.5, yMin: 0, yMax: 2.4 },
+  taxiRamp: {
+    kind: 'taxiRamp',
+    requirement: 'lane',
+    halfWidth: 1.0,
+    length: 5.5,
+    yMin: 0,
+    yMax: 2.4,
+    ramp: { length: 8 },
+  },
+  taxiMoving: {
+    kind: 'taxiMoving',
+    requirement: 'lane',
+    halfWidth: 1.0,
+    length: 5.5,
+    yMin: 0,
+    yMax: 2.4,
+    moving: { closing: 0.8 },
+  },
+  trainParked: {
+    kind: 'trainParked',
+    requirement: 'lane',
+    halfWidth: 1.15,
+    length: 20,
+    yMin: 0,
+    yMax: 3.6,
+    ramp: { length: 12 },
+  },
+  trainMoving: {
+    kind: 'trainMoving',
+    requirement: 'lane',
+    halfWidth: 1.15,
+    length: 20,
+    yMin: 0,
+    yMax: 3.6,
+    moving: { closing: 0.9 },
+  },
 };
+
+/** Player progress (m) before the meeting point at which a moving vehicle starts to move. */
+export const APPROACH_DISTANCE = 60;
 
 export const CONFIG = {
   lane: {
@@ -62,7 +130,7 @@ export const CONFIG = {
     /** How far ahead of the player (m) chunks are generated. */
     lookahead: 170,
     /** A chunk is recycled once its start is this far behind the player. */
-    recycleDistance: 60,
+    recycleDistance: 110,
     roadHalfWidth: 3.9,
     sidewalkWidth: 3.5,
     buildingsPerSide: 5,
@@ -105,6 +173,8 @@ export const CONFIG = {
     sideClipOverlap: 0.45,
     /** Feet within this distance of an obstacle's top are treated as clearing it. */
     topForgiveness: 0.3,
+    /** Same, for walkable roofs (so you can hop off the side of a train). */
+    roofForgiveness: 0.6,
     /** A second stumble within this many seconds is a crash. */
     stumbleWindow: 3,
     stumbleSlowFactor: 0.6,

@@ -6,8 +6,10 @@ import { buildObstacleGeometry, createModelMaterial } from './models';
 /** A live obstacle placed in a chunk. */
 export interface ObstacleInstance {
   def: ObstacleDef;
-  /** Track distance of the near edge (m). */
+  /** Track distance of the body's near edge (m). Changes every frame for moving vehicles. */
   s: number;
+  /** Where the row is: for moving vehicles, the point where they meet the player. */
+  anchorS: number;
   /** World x of the obstacle's centre. */
   x: number;
   mesh: THREE.Object3D;

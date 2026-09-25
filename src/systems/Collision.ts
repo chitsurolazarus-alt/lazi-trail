@@ -20,6 +20,8 @@ export interface ObstacleBox {
   halfWidth: number;
   yMin: number;
   yMax: number;
+  /** Length of a walkable ramp leading up to the body's roof (0 / absent = none). */
+  ramp?: number;
 }
 
 export type HitKind = 'none' | 'front' | 'side';
@@ -31,9 +33,16 @@ export type HitKind = 'none' | 'front' | 'side';
 export function testObstacleHit(p: PlayerBox, o: ObstacleBox): HitKind {
   const lateralOverlap = p.halfWidth + o.halfWidth - Math.abs(p.x - o.x);
   if (lateralOverlap <= 0) return 'none';
-  if (p.s + p.halfDepth <= o.s || p.s - p.halfDepth >= o.s + o.length) return 'none';
+  const ramp = o.ramp ?? 0;
+  const near = o.s - ramp;
+  if (p.s + p.halfDepth <= near || p.s - p.halfDepth >= o.s + o.length) return 'none';
   if (p.yMax <= o.yMin) return 'none';
-  if (p.yMin >= o.yMax - C.topForgiveness) return 'none';
+  // Over the ramp the solid top slopes up from the ground to the roof.
+  let top = o.yMax;
+  if (ramp > 0 && p.s < o.s) top = o.yMax * Math.min(1, Math.max(0, (p.s - near) / ramp));
+  // Roofs are forgiving: stepping off the side of one shouldn't clip the body on the way down.
+  const forgiveness = ramp > 0 ? C.roofForgiveness : C.topForgiveness;
+  if (p.yMin >= top - forgiveness) return 'none';
   return lateralOverlap < C.sideClipOverlap ? 'side' : 'front';
 }
 

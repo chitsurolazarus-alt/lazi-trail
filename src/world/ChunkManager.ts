@@ -6,6 +6,7 @@ import { CoinPool } from '../entities/Coin';
 import { ObstaclePool, type ObstacleModels } from '../entities/Obstacle';
 import { Chunk } from './Chunk';
 import type { DecorFactory } from './ChunkDecor';
+import { surfaceHeight } from '../systems/ObstacleMotion';
 import { ObstacleGenerator, type GeneratorParams } from './ObstacleGenerator';
 
 const W = CONFIG.world;
@@ -48,7 +49,7 @@ export class ChunkManager {
     this.generator = new ObstacleGenerator(this.rng);
   }
 
-  update(travelled: number, params: GeneratorParams): void {
+  update(travelled: number, params: Omit<GeneratorParams, 'zone'>): void {
     // Recycle chunks that have fully passed behind the player.
     while (this.active.length > 0) {
       const first = this.active[0] as Chunk;
@@ -62,14 +63,29 @@ export class ChunkManager {
       const zone = zoneIndexAt(this.nextStart + L / 2);
       this.decor.prepare(zone);
       const chunk = this.spare.pop() ?? new Chunk(this.decor.create());
-      const section = this.generator.generate(this.nextStart + L, params);
+      const section = this.generator.generate(this.nextStart + L, { ...params, zone });
       chunk.populate(this.nextStart, zone, section, this.obstaclePool, this.coinPool, this.rng);
       this.parent.add(chunk.group);
       this.active.push(chunk);
       this.nextStart += L;
     }
 
-    for (const chunk of this.active) chunk.setScroll(travelled);
+    for (const chunk of this.active) {
+      chunk.updateMoving(travelled);
+      chunk.setScroll(travelled);
+    }
+  }
+
+  /** Height of the walkable surface (road, ramp or roof) at lateral `x`, track position `s`. */
+  groundAt(x: number, s: number): number {
+    let h = 0;
+    for (const chunk of this.active) {
+      for (const o of chunk.ramps) {
+        const v = surfaceHeight(o, x, s);
+        if (v > h) h = v;
+      }
+    }
+    return h;
   }
 
   /** Spin coins. Cheap: only touches coins still in play. */

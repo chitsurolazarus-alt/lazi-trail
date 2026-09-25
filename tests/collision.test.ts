@@ -97,3 +97,53 @@ describe('coinTouched', () => {
     expect(coinTouched(player({ yMin: 1.5, yMax: 3.2 }), { x: 0, s: 100, y: 3 })).toBe(true);
   });
 });
+
+describe('ramps and roofs', () => {
+  const train = OBSTACLE_DEFS.trainParked;
+  const rampLen = train.ramp?.length ?? 0;
+  const body = (over: Partial<ObstacleBox> = {}): ObstacleBox => ({
+    ...obstacle('trainParked'),
+    ramp: rampLen,
+    ...over,
+  });
+
+  it('lets a player standing on the ramp surface run up it', () => {
+    for (const t of [0.1, 0.4, 0.8]) {
+      const s = 100 - rampLen + rampLen * t;
+      const surface = train.yMax * t;
+      expect(testObstacleHit(player({ s, yMin: surface, yMax: surface + P.height }), body())).toBe(
+        'none',
+      );
+    }
+  });
+
+  it('lets a player run along the roof, but hits the front wall at ground level', () => {
+    expect(
+      testObstacleHit(player({ s: 110, yMin: train.yMax, yMax: train.yMax + P.height }), body()),
+    ).toBe('none');
+    expect(testObstacleHit(player({ s: 100.2 }), body({ ramp: 0 }))).toBe('front');
+  });
+
+  it('runs onto the ramp foot from the ground without a hit', () => {
+    expect(testObstacleHit(player({ s: 100 - rampLen + 0.4 }), body())).toBe('none');
+  });
+
+  it('clips the side of the ramp if you step sideways into it low down', () => {
+    const s = 100 - rampLen * 0.6; // ramp is ~2.2 m high here
+    const x = P.halfWidth + train.halfWidth - 0.2;
+    expect(testObstacleHit(player({ s, x }), body())).toBe('side');
+  });
+
+  it('does not clip the body when hopping off the side of the roof', () => {
+    // Just started falling (0.4 m below the roof) and already 1.35 m to the side.
+    const x = train.halfWidth - 0.1;
+    const yMin = train.yMax - 0.4;
+    expect(testObstacleHit(player({ s: 110, x, yMin, yMax: yMin + P.height }), body())).toBe(
+      'none',
+    );
+  });
+
+  it('is solid at the rear end when falling past it', () => {
+    expect(testObstacleHit(player({ s: 100 + train.length + 1 }), body())).toBe('none');
+  });
+});
