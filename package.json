@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "assets": "node tools/fetch-assets.mjs",
-    "icons": "node tools/make-icons.mjs"
+    "icons": "node tools/make-icons.mjs",
+    "check": "tsc --noEmit && eslint . && vitest run"
   },
   "dependencies": {
     "three": "^0.186.1"
@@ -35,5 +36,23 @@
     "typescript-eslint": "^8.70.1",
     "vite": "^8.3.1",
     "vitest": "^5.0.1"
+  },
+  "license": "MIT",
+  "author": "Lazarus Chitsuro",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chitsurolazarus-alt/lazi-trail.git"
+  },
+  "homepage": "https://github.com/chitsurolazarus-alt/lazi-trail#readme",
+  "keywords": [
+    "game",
+    "threejs",
+    "endless-runner",
+    "typescript",
+    "vite",
+    "pwa"
+  ],
+  "engines": {
+    "node": ">=20"
   }
 }
