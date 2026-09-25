@@ -382,6 +382,7 @@ export class Progression {
       c.slides += run.slides;
       c.nearMisses += run.nearMisses;
       c.stumbles += run.stumbles;
+      c.powerUps += run.powerUps;
       if (run.caught) c.caught++;
       c.bestNoStumble = Math.max(c.bestNoStumble, Math.floor(run.noStumble));
       c.bestRunCoins = Math.max(c.bestRunCoins, run.coins);

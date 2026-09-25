@@ -3,6 +3,7 @@ import { CONFIG } from '../config/gameConfig';
 import { ZONES, zoneIndexAt } from '../config/zones';
 import { createRng } from '../core/random';
 import { CoinField } from '../entities/Coin';
+import { PickupField } from '../entities/Pickup';
 import { ObstaclePool, type ObstacleModels } from '../entities/Obstacle';
 import { Chunk } from './Chunk';
 import type { DecorFactory } from './ChunkDecor';
@@ -27,6 +28,8 @@ export class ChunkManager {
   private readonly obstaclePool: ObstaclePool;
   /** All coins in the world, drawn with two instanced meshes. */
   readonly coinField = new CoinField();
+  /** Power-up pickups (a few small models). */
+  readonly pickupField = new PickupField();
 
   constructor(
     private readonly parent: THREE.Object3D,
@@ -37,7 +40,7 @@ export class ChunkManager {
   ) {
     this.obstaclePool = new ObstaclePool(obstacleModels, castShadows);
     this.generator = new ObstacleGenerator(this.rng);
-    parent.add(this.coinField.object);
+    parent.add(this.coinField.object, this.pickupField.object);
   }
 
   get chunks(): readonly Chunk[] {
@@ -100,6 +103,7 @@ export class ChunkManager {
   /** Redraw every coin, spinning by `angle`. Two instanced draw calls in total. */
   animateCoins(angle: number): void {
     this.coinField.sync(this.active, angle);
+    this.pickupField.sync(this.active, angle / 4);
   }
 
   private recycle(chunk: Chunk): void {
@@ -118,6 +122,7 @@ export class ChunkManager {
     this.spare.length = 0;
     this.obstaclePool.dispose();
     this.coinField.dispose();
+    this.pickupField.dispose();
     this.decor.dispose();
   }
 }

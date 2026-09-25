@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { APPROACH_DISTANCE, OBSTACLE_DEFS, laneToX } from '../config/gameConfig';
+import { PICKUPS } from '../config/progression';
 import type { Rng } from '../core/random';
 import type { CoinInstance } from '../entities/Coin';
+import type { PickupInstance } from '../entities/Pickup';
 import type { ObstacleInstance, ObstaclePool } from '../entities/Obstacle';
 import { movingNearEdge } from '../systems/ObstacleMotion';
 import type { ChunkDecor } from './ChunkDecor';
@@ -26,6 +28,8 @@ export class Chunk {
   movers: ObstacleInstance[] = [];
   /** Coins (drawn together by the CoinField). */
   coins: CoinInstance[] = [];
+  /** Power-ups (drawn by the `PickupField`). */
+  pickups: PickupInstance[] = [];
   /** Street furniture records (see PropField), in this chunk's local space. */
   readonly props = new Float32Array(PropField.maxPerChunk * PropField.stride);
   propCount = 0;
@@ -60,6 +64,16 @@ export class Chunk {
       if (def.moving) this.movers.push(instance);
     }
 
+    for (const spec of section.pickups) {
+      this.pickups.push({
+        kind: spec.kind,
+        x: laneToX(spec.lane),
+        y: PICKUPS.height,
+        s: spec.s,
+        collected: false,
+      });
+    }
+
     for (const spec of section.coins) {
       this.coins.push({
         kind: spec.kind,
@@ -83,6 +97,7 @@ export class Chunk {
     this.ramps.length = 0;
     this.movers.length = 0;
     this.coins.length = 0;
+    this.pickups.length = 0;
     this.propCount = 0;
   }
 

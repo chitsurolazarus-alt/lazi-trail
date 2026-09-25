@@ -14,6 +14,8 @@ export interface RunStats {
   outruns: number;
   /** Longest stretch in metres run without a stumble. */
   noStumble: number;
+  /** Power-ups picked up. */
+  powerUps: number;
   /** The thief and his dog caught her (as opposed to hitting an obstacle). */
   caught: boolean;
   character: string;

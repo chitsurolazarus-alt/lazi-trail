@@ -16,6 +16,7 @@ export type StatKey =
   | 'missionStreak'
   | 'boxesOpened'
   | 'purchases'
+  | 'powerUps'
   | 'bestScore'
   | 'bestDistance'
   | 'bestZone'
@@ -69,6 +70,8 @@ export function statValue(save: SaveData, key: StatKey): number {
       return c.boxesOpened;
     case 'purchases':
       return c.purchases;
+    case 'powerUps':
+      return c.powerUps;
     case 'bestScore':
       return save.highScore;
     case 'bestDistance':
@@ -172,6 +175,9 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     3,
     200,
   ),
+  // Power-ups
+  a('power_10', 'Power Player', 'Pick up 10 power-ups.', 'powerUps', 10, 100),
+  a('power_100', 'Fully Charged', 'Pick up 100 power-ups.', 'powerUps', 100, 350, true),
   // Collecting
   a('box_1', 'Lucky Dip', 'Open a mystery box.', 'boxesOpened', 1, 50),
   a('box_10', 'Box Collector', 'Open 10 mystery boxes.', 'boxesOpened', 10, 250),

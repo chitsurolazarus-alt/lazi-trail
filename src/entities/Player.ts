@@ -26,6 +26,8 @@ export class Player {
   /** Character perks: lane-change speed and jump height multipliers. */
   private laneSpeedMul = 1;
   private jumpMul = 1;
+  /** Super Spikes multiplier (1 = off). */
+  private spikeMul = 1;
 
   private vy = 0;
   private grounded = true;
@@ -100,7 +102,13 @@ export class Player {
   setPerks(perks: { laneSpeedMul: number; jumpHeightMul: number }): void {
     this.laneSpeedMul = perks.laneSpeedMul;
     this.jumpMul = perks.jumpHeightMul;
-    this.jumpHeight = P.jumpHeight * this.jumpMul;
+    this.jumpHeight = P.jumpHeight * this.jumpMul * this.spikeMul;
+  }
+
+  /** Super Spikes on/off: scales jump height on top of the character perk. */
+  setSpikes(multiplier: number): void {
+    this.spikeMul = multiplier;
+    this.jumpHeight = P.jumpHeight * this.jumpMul * this.spikeMul;
   }
 
   reset(): void {
@@ -116,6 +124,7 @@ export class Player {
     this.queuedSlide = false;
     this.alive = true;
     this.groundY = 0;
+    this.spikeMul = 1;
     this.jumpHeight = P.jumpHeight * this.jumpMul;
     this.view.reset();
     this.syncTransform();

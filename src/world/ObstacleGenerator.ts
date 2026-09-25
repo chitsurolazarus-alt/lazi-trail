@@ -1,5 +1,6 @@
 import { CONFIG, LANE_COUNT, OBSTACLE_DEFS, type ObstacleKind } from '../config/gameConfig';
 import { ZONE_OBSTACLES, type ObstacleMix } from '../config/obstacles';
+import { PICKUPS, POWER_UP_IDS, type PowerUpId } from '../config/progression';
 import { lerp, smoothstep01 } from '../core/math';
 import { pickWeighted, pickOne, type Rng } from '../core/random';
 import { movingSweep } from '../systems/ObstacleMotion';
@@ -24,6 +25,13 @@ export interface CoinSpec {
   y: number;
   s: number;
   kind: CoinKind;
+}
+
+/** A power-up sitting on the track. */
+export interface PickupSpec {
+  lane: number;
+  s: number;
+  kind: PowerUpId;
 }
 
 /** One line of obstacles across the track. `safeLane` is guaranteed free of lane-blockers. */
@@ -54,6 +62,7 @@ export interface GeneratedSection {
   rows: Row[];
   obstacles: ObstacleSpec[];
   coins: CoinSpec[];
+  pickups: PickupSpec[];
 }
 
 const COIN_SPACING = 2;
@@ -88,6 +97,7 @@ export class ObstacleGenerator {
   private nextRowS: number;
   private prevEnd: number;
   private prevSafeLane = 1;
+  private lastPickupS = -Infinity;
   private safeLane = 1;
   /** Track distance up to which each lane is swept by a moving vehicle. */
   private readonly reserved: number[] = Array.from({ length: LANE_COUNT }, () => -Infinity);
@@ -102,13 +112,14 @@ export class ObstacleGenerator {
 
   /** Generate every row whose start lies before `endS`. */
   generate(endS: number, params: GeneratorParams): GeneratedSection {
-    const section: GeneratedSection = { rows: [], obstacles: [], coins: [] };
+    const section: GeneratedSection = { rows: [], obstacles: [], coins: [], pickups: [] };
     while (this.nextRowS < endS) {
       const row = this.buildRow(this.nextRowS, params);
       section.rows.push(row);
       section.obstacles.push(...row.obstacles);
       this.addGapCoins(section.coins, row, params);
       this.addRowCoins(section.coins, row);
+      this.addPickup(section.pickups, row);
 
       this.prevEnd = row.s + row.depth;
       this.prevSafeLane = row.safeLane;
@@ -191,6 +202,24 @@ export class ObstacleGenerator {
       if ((this.reserved[Math.round(lane)] ?? -Infinity) > s) continue;
       out.push({ lane, y: COIN_HEIGHT, s, kind: 'silver' });
     }
+  }
+
+  /**
+   * Now and then a power-up floats in the free stretch before a row, on the lane the path is
+   * heading for. Spaced out so there is never more than one on screen at a time.
+   */
+  private addPickup(out: PickupSpec[], row: Row): void {
+    const from = this.prevEnd + 3.5;
+    const to = row.s - row.lead - 3;
+    if (to - from < 10) return;
+    const s = (from + to) / 2;
+    if (s < PICKUPS.firstAt || s - this.lastPickupS < PICKUPS.minSpacing) return;
+    if (this.rng() >= PICKUPS.chance) return;
+    const lane = Math.round(lerp(this.prevSafeLane, row.safeLane, 0.5));
+    if ((this.reserved[lane] ?? -Infinity) > s) return;
+    const weights = POWER_UP_IDS.map((id) => PICKUPS.weights[id]);
+    out.push({ lane, s, kind: POWER_UP_IDS[pickWeighted(this.rng, weights)] as PowerUpId });
+    this.lastPickupS = s;
   }
 
   /** Coins that reward taking the action lane, or climbing onto a ramp and running along a roof. */

@@ -5,6 +5,7 @@ import { AssetLoader, CHARACTER_MODEL_KEYS } from '../core/AssetLoader';
 import { RealisticObstacleModels } from '../entities/realisticModels';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { RiggedPlayerView } from '../entities/RiggedPlayerView';
+import { buildPowerUpModel } from '../entities/powerupModels';
 import { Chasers } from '../entities/Chasers';
 import { PathHistory } from '../systems/PathHistory';
 import { createChase, type ChaseState } from '../systems/ChaseSystem';
@@ -152,6 +153,17 @@ export async function runGallery(root: HTMLElement, mode: string): Promise<void>
   }
 
   const mixers: THREE.AnimationMixer[] = [];
+  const spinners: THREE.Object3D[] = [];
+  if (mode === 'powerups') {
+    let x = -3;
+    for (const kind of ['magnet', 'boost', 'spikes', 'doubleScore'] as const) {
+      const model = buildPowerUpModel(kind);
+      model.object.position.set(x, 1.1, 0);
+      env.scene.add(model.object);
+      spinners.push(model.spin);
+      x += 2;
+    }
+  }
   if (mode === 'characters') {
     await Promise.all(CHARACTER_MODEL_KEYS.map((k) => assets.loadModel(k)));
     const keys = [
@@ -247,6 +259,7 @@ export async function runGallery(root: HTMLElement, mode: string): Promise<void>
   const tick = (): void => {
     const dt = clock.getDelta();
     for (const m of mixers) m.update(dt);
+    for (const sp of spinners) sp.rotation.y += dt * 1.2;
     laziView?.update(dt, laziPose);
     if (chasers) {
       chasers.update(dt, {

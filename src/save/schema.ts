@@ -57,6 +57,7 @@ export interface SaveCounters {
   missionsCompleted: number;
   boxesOpened: number;
   purchases: number;
+  powerUps: number;
   /** Best clean stretch (metres without a stumble) in any run. */
   bestNoStumble: number;
   /** Most Rand collected in a single run. */
@@ -157,6 +158,7 @@ export function defaultSave(): SaveData {
       missionsCompleted: 0,
       boxesOpened: 0,
       purchases: 0,
+      powerUps: 0,
       bestNoStumble: 0,
       bestRunCoins: 0,
     },
@@ -344,6 +346,7 @@ export function sanitizeSave(raw: unknown): SaveData {
       missionsCompleted: int(counters.missionsCompleted, 0),
       boxesOpened: int(counters.boxesOpened, 0),
       purchases: int(counters.purchases, 0),
+      powerUps: int(counters.powerUps, 0),
       bestNoStumble: num(counters.bestNoStumble, 0),
       bestRunCoins: num(counters.bestRunCoins, 0),
     },

@@ -1048,6 +1048,62 @@
   text-transform: uppercase;
 }
 
+.hud-powers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.hud-power {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 128px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hud-power-track {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(11, 42, 91, 0.75);
+  border: 1px solid rgba(246, 243, 234, 0.6);
+  overflow: hidden;
+}
+
+.hud-power-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: #ffd23f;
+  transition: width 0.2s linear;
+}
+
+.hud-power-magnet .hud-power-fill {
+  background: #ff5a4d;
+}
+
+.hud-power-boost .hud-power-fill {
+  background: #4dd0ff;
+}
+
+.hud-power-doubleScore .hud-power-fill {
+  background: #ffc83d;
+}
+
+.hud-power-low {
+  animation: power-blink 0.5s steps(2) infinite;
+}
+
+@keyframes power-blink {
+  50% {
+    opacity: 0.45;
+  }
+}
+
 .hud-shield[hidden] {
   display: none;
 }

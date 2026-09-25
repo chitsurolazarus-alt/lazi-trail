@@ -274,7 +274,7 @@ export const POWER_UPS: Readonly<
 export const POWER_UP_IDS = Object.keys(POWER_UPS) as PowerUpId[];
 export const UPGRADE_MAX = 5;
 /** Flip when power-up pickups exist on the trail (Phase 5); the shop note depends on it. */
-export const POWER_UPS_LIVE = false;
+export const POWER_UPS_LIVE = true;
 
 export function upgradeCost(id: PowerUpId, currentLevel: number): number {
   return POWER_UPS[id].costBase * 2 ** currentLevel;
@@ -284,3 +284,32 @@ export function powerUpSeconds(id: PowerUpId, level: number, durationMul = 1): n
   const p = POWER_UPS[id];
   return (p.baseSeconds + p.perLevel * level) * durationMul;
 }
+
+/** Where power-up pickups appear on the trail. */
+export const PICKUPS = {
+  /** No pickups before this track distance (m), so the first seconds stay simple. */
+  firstAt: 140,
+  /** Minimum metres between two pickups. */
+  minSpacing: 170,
+  /** Chance that an eligible gap between obstacle rows holds one. */
+  chance: 0.4,
+  /** Height of a pickup's centre above the road (m). */
+  height: 1.15,
+  /** Touch distances (m): sideways and along the track. */
+  reachX: 1.0,
+  reachS: 1.5,
+  /** Relative frequency of each power-up. */
+  weights: { magnet: 3, boost: 2, spikes: 3, doubleScore: 3 },
+} as const;
+
+/** What each power-up does while it is active. Durations come from `POWER_UPS` + upgrades. */
+export const POWER_UP_EFFECTS = {
+  /** Coins within `radius` m are pulled toward Lazi at `pull` m/s. */
+  magnet: { radius: 11, pull: 24 },
+  /** Speed multiplier while the Energy Drink lasts (Lazi is also invincible). */
+  boost: { speedMul: 1.45 },
+  /** Jump height multiplier. */
+  spikes: { jumpMul: 1.75 },
+  /** Score multiplier (stacks with distance and mission bonuses). */
+  doubleScore: { mul: 2 },
+} as const;

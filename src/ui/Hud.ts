@@ -23,6 +23,11 @@ export class Hud {
   private readonly muteButton = document.createElement('button');
   private readonly player = document.createElement('div');
   private readonly shield = document.createElement('div');
+  private readonly powers = document.createElement('div');
+  private readonly powerChips = new Map<
+    string,
+    { root: HTMLElement; fill: HTMLElement; last: number }
+  >();
   private last: Partial<HudValues> = {};
 
   constructor(onPause: () => void, onMute: (muted: boolean) => void) {
@@ -38,7 +43,8 @@ export class Hud {
     this.shield.setAttribute('aria-label', 'Shield active');
     this.shield.innerHTML =
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5z"/></svg><span>Shield</span>';
-    left.append(this.player, this.score.root, this.coins.root, this.shield);
+    this.powers.className = 'hud-powers';
+    left.append(this.player, this.score.root, this.coins.root, this.shield, this.powers);
 
     const right = document.createElement('div');
     right.className = 'hud-col hud-right';
@@ -78,6 +84,40 @@ export class Hud {
   /** Who is running: shown top-left ("Thabo · Lv 4"). */
   setPlayer(name: string, level: number): void {
     this.player.textContent = `${name} · Lv ${level}`;
+  }
+
+  /** Active power-ups with a draining bar each. DOM is touched only when a bar moves a step. */
+  setPowerUps(items: ReadonlyArray<{ id: string; label: string; fraction: number }>): void {
+    const live = new Set(items.map((i) => i.id));
+    for (const [id, chip] of this.powerChips) {
+      if (live.has(id)) continue;
+      chip.root.remove();
+      this.powerChips.delete(id);
+    }
+    for (const item of items) {
+      let chip = this.powerChips.get(item.id);
+      if (!chip) {
+        const root = document.createElement('div');
+        root.className = `hud-power hud-power-${item.id}`;
+        const label = document.createElement('span');
+        label.textContent = item.label;
+        const track = document.createElement('div');
+        track.className = 'hud-power-track';
+        const fill = document.createElement('div');
+        fill.className = 'hud-power-fill';
+        track.append(fill);
+        root.append(label, track);
+        this.powers.append(root);
+        chip = { root, fill, last: -1 };
+        this.powerChips.set(item.id, chip);
+      }
+      const pct = Math.round(Math.min(1, Math.max(0, item.fraction)) * 50) * 2;
+      if (pct !== chip.last) {
+        chip.fill.style.width = `${pct}%`;
+        chip.root.classList.toggle('hud-power-low', pct < 25);
+        chip.last = pct;
+      }
+    }
   }
 
   setShield(active: boolean): void {

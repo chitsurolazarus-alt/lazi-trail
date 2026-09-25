@@ -63,6 +63,7 @@ const run = (over: Partial<RunStats> = {}): RunStats => ({
   stumbles: 0,
   outruns: 0,
   noStumble: 500,
+  powerUps: 0,
   caught: false,
   character: 'lazi',
   name: 'Tester',

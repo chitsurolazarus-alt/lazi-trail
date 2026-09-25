@@ -1,6 +1,15 @@
 import { NO_PERKS, type Perks } from '../config/characters';
 import { CONFIG } from '../config/gameConfig';
-import { HEAD_START, SECOND_CHANCE } from '../config/progression';
+import {
+  HEAD_START,
+  PICKUPS,
+  POWER_UPS,
+  POWER_UP_EFFECTS,
+  POWER_UP_IDS,
+  SECOND_CHANCE,
+  powerUpSeconds,
+  type PowerUpId,
+} from '../config/progression';
 import { QUALITY_PROFILES, type QualityLevel, type QualityProfile } from '../config/quality';
 import { ZONES, type ZoneDef } from '../config/zones';
 import { Banner } from '../ui/Banner';
@@ -90,6 +99,7 @@ interface RunTally {
   nearMisses: number;
   stumbles: number;
   outruns: number;
+  powerUps: number;
   /** Track distance at the last stumble (start of the current clean stretch). */
   cleanSince: number;
   bestClean: number;
@@ -101,6 +111,7 @@ const freshTally = (): RunTally => ({
   nearMisses: 0,
   stumbles: 0,
   outruns: 0,
+  powerUps: 0,
   cleanSince: 0,
   bestClean: 0,
 });
@@ -186,6 +197,18 @@ export class Game {
   private shield = false;
   /** Seconds of Head Start (or later Energy Drink) sprint left: fast and invincible. */
   private boostTime = 0;
+  /** Speed multiplier of the current boost (Head Start or Energy Drink). */
+  private boostMul: number = HEAD_START.speedMul;
+  private boostTotal = 0;
+  private boostLabel = 'Head Start';
+  /** Seconds left on each active power-up, and the length each was started with. */
+  private power: Record<PowerUpId, number> = { magnet: 0, boost: 0, spikes: 0, doubleScore: 0 };
+  private powerTotal: Record<PowerUpId, number> = {
+    magnet: 1,
+    boost: 1,
+    spikes: 1,
+    doubleScore: 1,
+  };
   /** Seconds of invincibility after a Second Chance. */
   private invincible = 0;
   private tally: RunTally = freshTally();
@@ -531,7 +554,7 @@ export class Game {
     const useHead = headStart && this.progress.useItem('headStart');
     this.resetRun();
     if (!this.state.transition('playing')) return;
-    this.boostTime = useHead ? HEAD_START.duration : 0;
+    if (useHead) this.startBoost(HEAD_START.duration, HEAD_START.speedMul, 'Head Start');
     this.screens.hide();
     this.hud.show(true);
     this.banner.show(ZoneManager.bannerText(this.currentZone()));
@@ -736,6 +759,7 @@ export class Game {
     this.gameOverShown = false;
     this.shield = this.perks.startShield;
     this.boostTime = 0;
+    this.power = { magnet: 0, boost: 0, spikes: 0, doubleScore: 0 };
     this.invincible = 0;
     this.tally = freshTally();
     this.crashCaught = false;
@@ -751,6 +775,7 @@ export class Game {
     const w = this.world;
     w.player.setPerks(this.perks);
     w.player.reset();
+    this.hud.setPowerUps([]);
     w.chasers.reset();
     w.effects.clear();
     w.pedestrians?.reset(0);
@@ -804,6 +829,7 @@ export class Game {
       nearMisses: t.nearMisses,
       stumbles: t.stumbles,
       outruns: t.outruns,
+      powerUps: t.powerUps,
       noStumble: Math.max(t.bestClean, this.score.distance - t.cleanSince),
       caught: this.crashCaught,
       character: this.progress.selectedCharacter.id,
@@ -926,15 +952,15 @@ export class Game {
     const C = CONFIG.collision;
     const recover = C.stumbleRecover * this.perks.stumbleRecoverMul;
     this.speedFactor = Math.min(1, this.speedFactor + ((1 - C.stumbleSlowFactor) / recover) * dt);
-    if (this.boostTime > 0) this.boostTime = Math.max(0, this.boostTime - dt);
+    this.tickPowerUps(dt);
     if (this.invincible > 0) this.invincible = Math.max(0, this.invincible - dt);
-    const boostMul = this.boostTime > 0 ? HEAD_START.speedMul : 1;
+    const boostMul = this.boostTime > 0 ? this.boostMul : 1;
     this.speed = difficulty.speed * this.speedFactor * this.introFactor() * boostMul;
 
     const meters = this.speed * dt;
     this.worldSpeed = this.speed;
     this.travelled += meters;
-    this.score = advanceDistance(this.score, meters, this.scoreBonus);
+    this.score = advanceDistance(this.score, meters, this.totalBonus());
     this.tutorial.update(dt);
 
     const ground = w.chunks.groundAt(w.player.x, this.travelled);
@@ -947,7 +973,7 @@ export class Game {
     // Shaking the thief off again after they closed in counts as an outrun.
     if (this.lastChasePhase === 'dropping' && this.chase.phase === 'far') this.tally.outruns++;
     this.lastChasePhase = this.chase.phase;
-    this.checkCollisions();
+    this.checkCollisions(dt);
     this.updateChasers(dt);
 
     this.rig.update(dt, w.player.x, w.player.y, this.speed / CONFIG.difficulty.maxSpeed);
@@ -1041,13 +1067,27 @@ export class Game {
     if (entered !== null) this.bus.emit('zoneChange', { index: entered });
   }
 
-  private checkCollisions(): void {
+  private checkCollisions(dt: number): void {
     const w = this.world;
     const box = w.player.getBox(this.travelled);
     const ob = this.obstacleBox;
     const cp = this.coinPoint;
+    const magnet = this.power.magnet > 0 ? POWER_UP_EFFECTS.magnet : null;
 
     for (const chunk of w.chunks.chunks) {
+      for (const p of chunk.pickups) {
+        if (p.collected || Math.abs(p.s - this.travelled) > PICKUPS.reachS + 0.5) continue;
+        if (
+          Math.abs(p.x - box.x) < PICKUPS.reachX &&
+          Math.abs(p.s - this.travelled) < PICKUPS.reachS &&
+          box.yMax > p.y - 0.75 &&
+          box.yMin < p.y + 0.75
+        ) {
+          p.collected = true;
+          this.collectPowerUp(p.kind, p.x, p.y, -(p.s - this.travelled));
+        }
+      }
+
       for (const o of chunk.obstacles) {
         if (o.hit || o.s > this.travelled + NEAR || o.s + o.def.length < this.travelled - NEAR) {
           continue;
@@ -1084,14 +1124,21 @@ export class Game {
       }
 
       for (const c of chunk.coins) {
-        if (c.collected || Math.abs(c.s - this.travelled) > NEAR) continue;
+        if (c.collected) continue;
+        if (magnet && Math.abs(c.s - this.travelled) < magnet.radius)
+          this.pullCoin(c, dt, magnet.pull);
+        if (Math.abs(c.s - this.travelled) > NEAR) continue;
         cp.x = c.x;
         cp.s = c.s;
         cp.y = c.y;
         if (!coinTouched(box, cp)) continue;
         c.collected = true;
         const value = c.kind === 'gold' ? CONFIG.scoring.goldValue : CONFIG.scoring.silverValue;
-        this.score = addCoins(this.score, value);
+        this.score = addCoins(
+          this.score,
+          value,
+          this.power.doubleScore > 0 ? POWER_UP_EFFECTS.doubleScore.mul : 1,
+        );
         this.bus.emit('coin', {
           value,
           x: c.x,
@@ -1170,6 +1217,86 @@ export class Game {
     this.rig.impact(0.06 + 0.16 * k);
   }
 
+  /** Mission bonus times 2x Score while it lasts. */
+  private totalBonus(): number {
+    return this.scoreBonus * (this.power.doubleScore > 0 ? POWER_UP_EFFECTS.doubleScore.mul : 1);
+  }
+
+  /** Start (or extend) a speed boost that is also invincible. */
+  private startBoost(seconds: number, speedMul: number, label: string): void {
+    this.boostTime = Math.max(this.boostTime, seconds);
+    this.boostTotal = this.boostTime;
+    this.boostMul = speedMul;
+    this.boostLabel = label;
+  }
+
+  private collectPowerUp(kind: PowerUpId, x: number, y: number, z: number): void {
+    const level = this.progress.data.upgrades[kind];
+    const seconds = powerUpSeconds(
+      kind,
+      level,
+      kind === 'magnet' ? this.perks.magnetDurationMul : 1,
+    );
+    this.tally.powerUps++;
+    this.director.powerUp();
+    this.world.effects.sparkle(x, y, z, true);
+    this.banner.show(`${POWER_UPS[kind].name}!`, 1.4);
+    if (kind === 'boost') {
+      this.startBoost(seconds, POWER_UP_EFFECTS.boost.speedMul, POWER_UPS.boost.name);
+      return;
+    }
+    this.power[kind] = seconds;
+    this.powerTotal[kind] = seconds;
+    if (kind === 'spikes') this.world.player.setSpikes(POWER_UP_EFFECTS.spikes.jumpMul);
+  }
+
+  /** Count power-ups down; announce and undo the ones that run out. */
+  private tickPowerUps(dt: number): void {
+    if (this.boostTime > 0) {
+      this.boostTime = Math.max(0, this.boostTime - dt);
+      if (this.boostTime === 0) {
+        this.boostTotal = 0;
+        if (this.boostLabel !== 'Head Start') this.director.powerDown();
+      }
+    }
+    for (const id of POWER_UP_IDS) {
+      if (id === 'boost' || this.power[id] <= 0) continue;
+      this.power[id] = Math.max(0, this.power[id] - dt);
+      if (this.power[id] === 0) {
+        this.director.powerDown();
+        if (id === 'spikes') this.world.player.setSpikes(1);
+      }
+    }
+  }
+
+  /** Pull a coin toward Lazi (Coin Magnet). */
+  private pullCoin(c: { x: number; y: number; s: number }, dt: number, speed: number): void {
+    const p = this.world.player;
+    const k = Math.min(
+      1,
+      (speed * dt) / Math.max(0.5, Math.abs(c.s - this.travelled) + Math.abs(c.x - p.x)),
+    );
+    c.s += (this.travelled - c.s) * k;
+    c.x += (p.x - c.x) * k;
+    c.y += (Math.max(0.9, p.y + 0.9) - c.y) * k;
+  }
+
+  private updatePowerHud(): void {
+    const list: Array<{ id: string; label: string; fraction: number }> = [];
+    if (this.boostTime > 0) {
+      list.push({
+        id: 'boost',
+        label: this.boostLabel,
+        fraction: this.boostTime / Math.max(0.01, this.boostTotal),
+      });
+    }
+    for (const id of POWER_UP_IDS) {
+      if (id === 'boost' || this.power[id] <= 0) continue;
+      list.push({ id, label: POWER_UPS[id].name, fraction: this.power[id] / this.powerTotal[id] });
+    }
+    this.hud.setPowerUps(list);
+  }
+
   private stumble(): void {
     this.tally.stumbles++;
     this.tally.bestClean = Math.max(
@@ -1183,11 +1310,12 @@ export class Game {
   }
 
   private updateHud(): void {
+    this.updatePowerHud();
     this.hud.update({
       score: totalScore(this.score),
       coins: this.score.coins,
       distance: Math.floor(this.score.distance),
-      multiplier: multiplierForDistance(this.score.distance, this.scoreBonus),
+      multiplier: multiplierForDistance(this.score.distance, this.totalBonus()),
       zone: this.currentZone().name,
       chase: chaseMeter(this.chase),
     });

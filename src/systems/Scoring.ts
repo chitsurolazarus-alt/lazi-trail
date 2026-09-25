@@ -38,11 +38,15 @@ export function advanceDistance(state: ScoreState, meters: number, bonus = 1): S
 }
 
 /** Add a coin pickup worth `value` Rand. */
-export function addCoins(state: ScoreState, value: number = S.silverValue): ScoreState {
+export function addCoins(
+  state: ScoreState,
+  value: number = S.silverValue,
+  pointsMul = 1,
+): ScoreState {
   return {
     ...state,
     coins: state.coins + value,
-    coinPoints: state.coinPoints + value * S.pointsPerCoin,
+    coinPoints: state.coinPoints + value * S.pointsPerCoin * pointsMul,
   };
 }
 
