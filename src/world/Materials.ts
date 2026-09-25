@@ -159,8 +159,9 @@ export class MaterialLibrary {
     });
     this.paint = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.32,
-      metalness: 0.45,
+      roughness: 0.42,
+      metalness: 0.25,
+      envMapIntensity: 0.7,
     });
     this.foliage = new THREE.MeshStandardMaterial({
       vertexColors: true,

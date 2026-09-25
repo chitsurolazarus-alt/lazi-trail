@@ -379,7 +379,7 @@ export class MeshBuilder {
     color: number,
     detail = 1,
   ): this {
-    const geo = new THREE.IcosahedronGeometry(1, detail).toNonIndexed();
+    const geo = new THREE.IcosahedronGeometry(1, detail);
     geo.computeVertexNormals();
     const p = geo.getAttribute('position');
     const n = geo.getAttribute('normal');

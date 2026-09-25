@@ -3,6 +3,7 @@ import { QUALITY_PROFILES, type QualityLevel, type QualityProfile } from '../con
 import { ZONES, zoneIndexAt, type ZoneDef } from '../config/zones';
 import { Player } from '../entities/Player';
 import { PrimitiveObstacleModels, type ObstacleModels } from '../entities/Obstacle';
+import { RealisticObstacleModels } from '../entities/realisticModels';
 import type { SaveManager } from '../save/SaveManager';
 import {
   coinTouched,
@@ -91,6 +92,8 @@ export class Game {
   private crashTime = 0;
   private gameOverShown = false;
   private spin = 0;
+  /** Dev only: obstacles can't hurt. Toggle from the console via `__lazi.debugGod(true)`. */
+  private god = false;
 
   // Scratch objects reused every frame to avoid allocations in the hot path.
   private readonly obstacleBox: ObstacleBox = {
@@ -186,6 +189,10 @@ export class Game {
     };
   }
 
+  debugGod(on: boolean): void {
+    this.god = on;
+  }
+
   /** Dev helper: jump the run forward (used to look at later zones). */
   debugSkipTo(distance: number): void {
     this.travelled = distance;
@@ -244,7 +251,7 @@ export class Game {
         materials,
         profile.shadows === 'map',
       );
-      obstacleModels = new PrimitiveObstacleModels(); // detailed models arrive in a later step
+      obstacleModels = new RealisticObstacleModels(materials);
     }
 
     const env = new Environment(profile, assets, this.pipeline.renderer);
@@ -463,7 +470,7 @@ export class Game {
         ob.ramp = o.def.ramp?.length ?? 0;
 
         const hit = testObstacleHit(box, ob);
-        if (hit === 'none') continue;
+        if (hit === 'none' || this.god) continue;
         o.hit = true;
         if (hit === 'front' || resolveStumble(this.lastStumbleAt, this.elapsed) === 'crash') {
           this.crash();

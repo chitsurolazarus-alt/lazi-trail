@@ -116,7 +116,7 @@ export class RenderPipeline {
     composer.addPass(this.renderPass);
 
     if (p.bloom) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(this.width, this.height), 0.3, 0.55, 0.85);
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(this.width, this.height), 0.3, 0.5, 1.6);
       composer.addPass(this.bloom);
     }
 
