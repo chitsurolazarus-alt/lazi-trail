@@ -18,7 +18,8 @@ Three.js + Vite + TypeScript (strict). No backend; persistence via localStorage 
 
 - **Lazi**, a young South African athlete training through the city for the big race (stadium is the dream).
 - Setting: township market, city streets, train yard, stadium approach, Table Mountain in the distance.
-- Art: bright cartoon low-poly; primitives first, swappable later for CC0 models (Kenney, Quaternius, Poly Pizza) and Mixamo animations.
+- Art: stylised-realistic (updated after Phase 1). PBR materials, real textures, detailed buildings, HDRI lighting, soft shadows and post-processing, while still running well on phones. Phase 1 primitives stay as low-quality fallbacks. Details are in Phase 2.
+- Chasers: a thief and his dog chase Lazi from the start of every run (the thief is after Lazi's bag and medal).
 - Colours: Orange `#FF7A1A`, Deep Blue `#0B2A5B`, white/off-white text.
 - Credit on main menu and game-over: "Built by Lazarus Chitsuro" → `https://github.com/chitsurolazarus-alt`.
 

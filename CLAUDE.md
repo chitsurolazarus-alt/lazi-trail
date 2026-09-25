@@ -17,9 +17,12 @@ Commands: `npm run dev | test | build | lint | format`.
 - UI = HTML/CSS overlay over the canvas; menus keyboard-accessible.
 - No `any` unless justified. Small, meaningful commits per feature.
 
+## Chasers
+A thief and his dog chase Lazi from the start of every run (the thief is after Lazi's bag and medal). Not yet built; details come with the Phase 2 text.
+
 ## Look
 
-Bright cartoon low-poly. Orange `#FF7A1A`, Deep Blue `#0B2A5B`, white/off-white text. Credit "Built by Lazarus Chitsuro" → https://github.com/chitsurolazarus-alt on menu + game over.
+Stylised-realistic (updated after Phase 1): PBR materials, real textures, detailed buildings, HDRI lighting, soft shadows, post-processing — still 60fps on mid-range phones. Phase 1 primitives stay as low-quality fallbacks. Orange `#FF7A1A`, Deep Blue `#0B2A5B`, white/off-white text. Credit "Built by Lazarus Chitsuro" → https://github.com/chitsurolazarus-alt on menu + game over.
 Zones: 1 Township Market (0–1000m), 2 City Streets (1000–2500m), 3 Train Yard (2500–4500m), 4 Stadium Approach (4500m+).
 
 ## Structure
