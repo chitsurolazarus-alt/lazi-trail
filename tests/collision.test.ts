@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { CONFIG, OBSTACLE_DEFS } from '../src/config/gameConfig';
 import {
   coinTouched,
-  resolveStumble,
   testObstacleHit,
   type ObstacleBox,
   type PlayerBox,
@@ -68,20 +67,6 @@ describe('testObstacleHit', () => {
     const sliding = player({ yMax: P.slideHeight });
     expect(testObstacleHit(sliding, obstacle('awning'))).toBe('none');
     expect(testObstacleHit(player(), obstacle('awning'))).toBe('front');
-  });
-});
-
-describe('resolveStumble', () => {
-  it('first stumble is just a stumble', () => {
-    expect(resolveStumble(null, 10)).toBe('stumble');
-  });
-
-  it('a second stumble within the window is a crash', () => {
-    expect(resolveStumble(10, 11)).toBe('crash');
-  });
-
-  it('a stumble after the window has passed is only a stumble again', () => {
-    expect(resolveStumble(10, 10 + CONFIG.collision.stumbleWindow + 0.1)).toBe('stumble');
   });
 });
 

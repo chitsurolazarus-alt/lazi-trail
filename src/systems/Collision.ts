@@ -46,15 +46,6 @@ export function testObstacleHit(p: PlayerBox, o: ObstacleBox): HitKind {
   return lateralOverlap < C.sideClipOverlap ? 'side' : 'front';
 }
 
-/** What a side clip turns into, given when the previous stumble happened (or null). */
-export function resolveStumble(
-  lastStumbleAt: number | null,
-  now: number,
-  window: number = C.stumbleWindow,
-): 'stumble' | 'crash' {
-  return lastStumbleAt !== null && now - lastStumbleAt < window ? 'crash' : 'stumble';
-}
-
 export interface CoinPoint {
   x: number;
   s: number;

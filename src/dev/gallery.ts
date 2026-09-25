@@ -3,6 +3,12 @@ import { OBSTACLE_DEFS, type ObstacleKind } from '../config/gameConfig';
 import { QUALITY_PROFILES } from '../config/quality';
 import { AssetLoader } from '../core/AssetLoader';
 import { RealisticObstacleModels } from '../entities/realisticModels';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { RiggedPlayerView } from '../entities/RiggedPlayerView';
+import { Chasers } from '../entities/Chasers';
+import { PathHistory } from '../systems/PathHistory';
+import { createChase, type ChaseState } from '../systems/ChaseSystem';
+import type { PlayerPose } from '../entities/PlayerView';
 import { RenderPipeline } from '../systems/RenderPipeline';
 import { Environment } from '../world/Environment';
 import { MaterialLibrary } from '../world/Materials';
@@ -68,6 +74,87 @@ export async function runGallery(root: HTMLElement, mode: string): Promise<void>
     }
   }
 
+  const mixers: THREE.AnimationMixer[] = [];
+  if (mode === 'characters') {
+    const keys = ['lazi', 'thief', 'dog', 'ped_worker', 'ped_business', 'ped_farmer'] as const;
+    const wanted = params.get('clip');
+    let x = 0;
+    for (const key of keys) {
+      const gltf = assets.models.get(key);
+      if (!gltf) continue;
+      const root = cloneSkinned(gltf.scene) as THREE.Object3D;
+      const box = new THREE.Box3().setFromObject(root);
+      const size = box.getSize(new THREE.Vector3());
+      console.log(
+        key,
+        'size',
+        size.x.toFixed(2),
+        size.y.toFixed(2),
+        size.z.toFixed(2),
+        'clips',
+        gltf.animations.map((a) => `${a.name}:${a.duration.toFixed(2)}`).join(','),
+      );
+      root.position.set(x, 0, 0);
+      env.scene.add(root);
+      const mixer = new THREE.AnimationMixer(root);
+      const clip = gltf.animations.find((a) => a.name === wanted) ?? gltf.animations[0];
+      if (clip) mixer.clipAction(clip).play();
+      mixers.push(mixer);
+      const mats = new Set<string>();
+      root.traverse((o) => {
+        if (o instanceof THREE.Mesh)
+          for (const m of Array.isArray(o.material) ? o.material : [o.material])
+            mats.add(`${o.name}/${m.name}`);
+      });
+      console.log(key, 'meshes/materials', [...mats].join(' | '));
+      x += 1.8;
+    }
+  }
+
+  let laziView: RiggedPlayerView | null = null;
+  const laziPose: PlayerPose = {
+    alive: true,
+    grounded: true,
+    sliding: false,
+    running: true,
+    speedNorm: 0.3,
+    lean: 0,
+    y: 0,
+    vy: 0,
+  };
+  if (mode === 'lazi') {
+    laziView = new RiggedPlayerView(assets);
+    env.scene.add(laziView.object);
+    const state = params.get('pose') ?? 'run';
+    if (state === 'air') {
+      laziPose.grounded = false;
+      laziView.trigger('jump');
+    }
+    if (state === 'slide') {
+      laziPose.sliding = true;
+      laziView.trigger('slide');
+    }
+    if (state === 'stumble') laziView.trigger('stumble');
+    if (state === 'crash') {
+      laziPose.alive = false;
+      laziView.trigger('crash');
+    }
+    if (state === 'idle') laziPose.running = false;
+    laziView.setShadows(true);
+  }
+
+  let chasers: Chasers | null = null;
+  const chase: ChaseState = createChase();
+  const path = new PathHistory();
+  if (mode === 'chasers') {
+    for (let i = 0; i <= 400; i++) path.record(i * 0.25, 0, 0);
+    chasers = new Chasers(assets, true);
+    env.scene.add(chasers.root);
+    const phase = (params.get('phase') ?? 'close') as ChaseState['phase'];
+    chase.phase = phase;
+    chase.gap = Number(params.get('gap') ?? 4);
+  }
+
   const camera = new THREE.PerspectiveCamera(45, root.clientWidth / root.clientHeight, 0.1, 400);
   camera.position.copy(vec('cam', [10, 6, 22]));
   camera.lookAt(vec('look', [10, 1.5, 0]));
@@ -75,6 +162,18 @@ export async function runGallery(root: HTMLElement, mode: string): Promise<void>
   const clock = new THREE.Clock();
   const tick = (): void => {
     const dt = clock.getDelta();
+    for (const m of mixers) m.update(dt);
+    laziView?.update(dt, laziPose);
+    if (chasers) {
+      chasers.update(dt, {
+        chase,
+        path,
+        travelled: 100,
+        speedNorm: 0.3,
+        player: { x: 0, y: 0 } as never,
+        laziView: null,
+      });
+    }
     materials.update(clock.elapsedTime, env.atmosphere.night);
     env.update(zoneDistance, camera.position, clock.elapsedTime, 0);
     pipeline.render(env.scene, camera, dt, 0, env.atmosphere.bloom);

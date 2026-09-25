@@ -1,18 +1,18 @@
 import * as THREE from 'three';
 import { CONFIG, LANE_COUNT, laneToX } from '../config/gameConfig';
-import { clamp, damp } from '../core/math';
+import type { QualityProfile } from '../config/quality';
 import type { EventBus } from '../core/EventBus';
 import type { GameEvents } from '../core/events';
+import { clamp } from '../core/math';
 import type { PlayerBox } from '../systems/Collision';
-import type { QualityProfile } from '../config/quality';
-import { buildLaziGeometries, createModelMaterial, type LaziGeometries } from './models';
+import type { PlayerPose, PlayerView } from './PlayerView';
 
 const P = CONFIG.player;
 const LANE_SPEED = CONFIG.lane.width / CONFIG.lane.changeTime;
 
 /**
- * Lazi. Lane switching, jump, slide and gravity live here; the mesh is a placeholder made of
- * primitives with procedural run/jump/slide animation.
+ * Lazi's movement: lane switching, jump, slide, gravity, ramps and roofs. What she looks like is
+ * up to the `PlayerView` (rigged model, or primitive shapes on Low quality).
  */
 export class Player {
   readonly root = new THREE.Group();
@@ -31,17 +31,20 @@ export class Player {
   private prevLane = 1;
   private bufferedJump = 0;
   private queuedSlide = false;
-  private runPhase = 0;
-  private crashTime = 0;
+  private groundY = 0;
 
-  private readonly visual = new THREE.Group();
-  private readonly legL = new THREE.Group();
-  private readonly legR = new THREE.Group();
-  private readonly armL = new THREE.Group();
-  private readonly armR = new THREE.Group();
+  private readonly pose: PlayerPose = {
+    alive: true,
+    grounded: true,
+    sliding: false,
+    running: false,
+    speedNorm: 0,
+    lean: 0,
+    y: 0,
+    vy: 0,
+  };
+
   private readonly shadow: THREE.Mesh;
-  private readonly geometries: LaziGeometries;
-  private readonly material = createModelMaterial();
   private readonly shadowMaterial = new THREE.MeshBasicMaterial({
     color: 0x000000,
     transparent: true,
@@ -53,27 +56,15 @@ export class Player {
   constructor(
     private readonly bus: EventBus<GameEvents>,
     profile: QualityProfile,
+    readonly view: PlayerView,
   ) {
-    this.geometries = buildLaziGeometries();
-    const { body, leg, arm } = this.geometries;
+    this.root.add(view.object);
+    view.setShadows(profile.shadows === 'map');
 
-    this.visual.add(new THREE.Mesh(body, this.material));
-    this.legL.position.set(-0.14, 0.75, 0);
-    this.legR.position.set(0.14, 0.75, 0);
-    this.armL.position.set(-0.38, 1.32, 0);
-    this.armR.position.set(0.38, 1.32, 0);
-    for (const limb of [this.legL, this.legR]) limb.add(new THREE.Mesh(leg, this.material));
-    for (const limb of [this.armL, this.armR]) limb.add(new THREE.Mesh(arm, this.material));
-    this.visual.add(this.legL, this.legR, this.armL, this.armR);
-    this.root.add(this.visual);
-
-    this.shadow = new THREE.Mesh(this.shadowGeometry, this.shadowMaterial);
     // A real shadow map replaces the blob; otherwise the blob keeps jumps readable.
+    this.shadow = new THREE.Mesh(this.shadowGeometry, this.shadowMaterial);
     this.shadow.visible = profile.shadows !== 'map';
-    if (profile.shadows === 'map') this.visual.traverse((o) => (o.castShadow = true));
-    this.shadow.position.y = 0.03;
     this.root.add(this.shadow);
-    // The shadow must stay on the ground while `root` lifts off during a jump.
   }
 
   reset(): void {
@@ -88,11 +79,9 @@ export class Player {
     this.bufferedJump = 0;
     this.queuedSlide = false;
     this.alive = true;
-    this.crashTime = 0;
-    this.runPhase = 0;
-    this.visual.rotation.set(0, 0, 0);
-    this.visual.position.set(0, 0, 0);
+    this.groundY = 0;
     this.jumpHeight = P.jumpHeight;
+    this.view.reset();
     this.syncTransform();
   }
 
@@ -116,6 +105,7 @@ export class Player {
   /** After a side clip: go back to the lane we came from. */
   bounceBack(): void {
     this.lane = this.prevLane;
+    this.view.trigger('stumble');
   }
 
   jump(): void {
@@ -125,6 +115,7 @@ export class Player {
       this.grounded = false;
       this.sliding = false;
       this.slideTimer = 0;
+      this.view.trigger('jump');
       this.bus.emit('jump');
     } else {
       this.bufferedJump = P.inputBuffer;
@@ -145,13 +136,19 @@ export class Player {
   private startSlide(): void {
     this.sliding = true;
     this.slideTimer = P.slideTime;
+    this.view.trigger('slide');
     this.bus.emit('slide');
   }
 
-  crash(): void {
+  /** Game over. `caught` = the chasers got her (rather than an obstacle). */
+  crash(caught = false): void {
     this.alive = false;
     this.sliding = false;
-    this.crashTime = 0;
+    this.view.trigger(caught ? 'caught' : 'crash');
+  }
+
+  celebrate(): void {
+    this.view.trigger('celebrate');
   }
 
   getBox(s: number): PlayerBox {
@@ -165,19 +162,39 @@ export class Player {
     };
   }
 
-  /** `speedNorm` (0..1) scales the run-cycle rate; `running` is false on menus. */
+  /** True while on a raised surface (roof), for dust/footstep effects. */
+  get onRoof(): boolean {
+    return this.grounded && this.groundY > 0.5;
+  }
+
+  get isGrounded(): boolean {
+    return this.grounded;
+  }
+
+  get isSliding(): boolean {
+    return this.sliding;
+  }
+
   /**
    * `speedNorm` (0..1) scales the run-cycle rate; `running` is false on menus; `ground` is the
    * height of the walkable surface under Lazi (0 = road, higher on ramps and roofs).
    */
   update(dt: number, speedNorm: number, running: boolean, ground = 0): void {
+    this.groundY = ground;
     if (this.alive) {
       this.updateLane(dt);
       this.updatePhysics(dt, ground);
-    } else {
-      this.crashTime += dt;
     }
-    this.animate(dt, speedNorm, running);
+    const p = this.pose;
+    p.alive = this.alive;
+    p.grounded = this.grounded;
+    p.sliding = this.sliding;
+    p.running = running;
+    p.speedNorm = speedNorm;
+    p.lean = clamp((laneToX(this.lane) - this.x) / CONFIG.lane.width, -1, 1);
+    p.y = this.y;
+    p.vy = this.vy;
+    this.view.update(dt, p);
     this.syncTransform();
   }
 
@@ -211,6 +228,7 @@ export class Player {
       this.y = ground;
       this.vy = 0;
       this.grounded = true;
+      this.view.trigger('land');
       if (this.queuedSlide) {
         this.queuedSlide = false;
         this.startSlide();
@@ -222,67 +240,19 @@ export class Player {
     }
   }
 
-  private animate(dt: number, speedNorm: number, running: boolean): void {
-    const v = this.visual;
-    if (!this.alive) {
-      // Tumble forward and flop.
-      const t = clamp(this.crashTime / 0.35, 0, 1);
-      v.rotation.x = -1.5 * t;
-      v.position.y = 0.25 * t;
-      this.armL.rotation.x = this.armR.rotation.x = -2.2 * t;
-      this.legL.rotation.x = 0.3 * t;
-      this.legR.rotation.x = -0.4 * t;
-      return;
-    }
-
-    const lean = clamp((laneToX(this.lane) - this.x) / CONFIG.lane.width, -1, 1);
-    v.rotation.z = damp(v.rotation.z, -lean * 0.25, 20, dt);
-
-    if (this.sliding) {
-      v.rotation.x = damp(v.rotation.x, 1.3, 30, dt);
-      v.position.y = damp(v.position.y, 0.05, 30, dt);
-      this.legL.rotation.x = this.legR.rotation.x = 0;
-      this.armL.rotation.x = this.armR.rotation.x = 1.2;
-    } else if (!this.grounded) {
-      v.rotation.x = damp(v.rotation.x, 0, 20, dt);
-      v.position.y = damp(v.position.y, 0, 20, dt);
-      this.legL.rotation.x = -0.9;
-      this.legR.rotation.x = 0.5;
-      this.armL.rotation.x = 2.4;
-      this.armR.rotation.x = 2.4;
-    } else if (running) {
-      v.rotation.x = damp(v.rotation.x, 0.12, 20, dt);
-      this.runPhase += dt * (10 + speedNorm * 6);
-      const swing = Math.sin(this.runPhase);
-      this.legL.rotation.x = swing * 0.95;
-      this.legR.rotation.x = -swing * 0.95;
-      this.armL.rotation.x = -swing * 0.85;
-      this.armR.rotation.x = swing * 0.85;
-      v.position.y = Math.abs(Math.cos(this.runPhase)) * 0.06;
-    } else {
-      // Idle
-      v.rotation.x = damp(v.rotation.x, 0, 10, dt);
-      v.position.y = damp(v.position.y, 0, 10, dt);
-      this.legL.rotation.x = this.legR.rotation.x = 0;
-      this.armL.rotation.x = this.armR.rotation.x = 0;
-    }
-  }
-
   private syncTransform(): void {
     this.root.position.set(this.x, this.y, 0);
-    // Keep the blob shadow on the road and shrink/fade it with height.
-    this.shadow.position.y = 0.03 - this.y;
-    const k = 1 / (1 + this.y * 0.6);
+    // Keep the blob shadow on the surface underfoot and shrink/fade it with height above it.
+    const above = Math.max(0, this.y - this.groundY);
+    this.shadow.position.y = this.groundY - this.y + 0.03;
+    const k = 1 / (1 + above * 0.6);
     this.shadow.scale.setScalar(k);
     this.shadowMaterial.opacity = 0.3 * k;
   }
 
   dispose(): void {
-    this.geometries.body.dispose();
-    this.geometries.leg.dispose();
-    this.geometries.arm.dispose();
+    this.view.dispose();
     this.shadowGeometry.dispose();
     this.shadowMaterial.dispose();
-    this.material.dispose();
   }
 }

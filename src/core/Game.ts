@@ -2,18 +2,30 @@ import { CONFIG } from '../config/gameConfig';
 import { QUALITY_PROFILES, type QualityLevel, type QualityProfile } from '../config/quality';
 import { ZONES, zoneIndexAt, type ZoneDef } from '../config/zones';
 import { Player } from '../entities/Player';
+import { Chasers, type ChaseContext, type ChaserView } from '../entities/Chasers';
+import { PrimitiveChasers } from '../entities/PrimitiveChasers';
+import { PrimitivePlayerView } from '../entities/PrimitivePlayerView';
+import { RiggedPlayerView } from '../entities/RiggedPlayerView';
 import { PrimitiveObstacleModels, type ObstacleModels } from '../entities/Obstacle';
 import { RealisticObstacleModels } from '../entities/realisticModels';
 import type { SaveManager } from '../save/SaveManager';
 import {
   coinTouched,
-  resolveStumble,
   testObstacleHit,
   type CoinPoint,
   type ObstacleBox,
 } from '../systems/Collision';
 import { CameraRig } from '../systems/CameraRig';
+import {
+  chaseMeter,
+  createChase,
+  onCrash,
+  onStumble,
+  stepChase,
+  type ChaseState,
+} from '../systems/ChaseSystem';
 import { getDifficulty, speedAt } from '../systems/Difficulty';
+import { PathHistory } from '../systems/PathHistory';
 import { RenderPipeline } from '../systems/RenderPipeline';
 import {
   addCoins,
@@ -39,6 +51,7 @@ import { EventBus } from './EventBus';
 import { GameLoop } from './GameLoop';
 import { Input, type InputAction } from './Input';
 import { StateMachine } from './StateMachine';
+import { smoothstep01 } from './math';
 import type { GameEvents } from './events';
 
 type GameState = 'ready' | 'playing' | 'paused' | 'gameover';
@@ -52,6 +65,7 @@ interface World {
   env: Environment;
   chunks: ChunkManager;
   player: Player;
+  chasers: ChaserView;
   materials: MaterialLibrary | null;
 }
 
@@ -88,7 +102,16 @@ export class Game {
   private bestZoneThisRun = 0;
   private speed = 0;
   private speedFactor = 1;
-  private lastStumbleAt: number | null = null;
+  private chase: ChaseState = createChase();
+  private readonly path = new PathHistory();
+  private readonly chaseCtx = {
+    chase: this.chase,
+    path: this.path,
+    travelled: 0,
+    speedNorm: 0,
+    player: null as unknown as Player,
+    laziView: null as RiggedPlayerView | null,
+  } satisfies ChaseContext;
   private crashTime = 0;
   private gameOverShown = false;
   private spin = 0;
@@ -189,6 +212,11 @@ export class Game {
     };
   }
 
+  /** Dev helper: run the simulation forward without rendering (`seconds` of game time). */
+  debugAdvance(seconds: number, step = 1 / 60): void {
+    for (let t = 0; t < seconds; t += step) this.update(step);
+  }
+
   debugGod(on: boolean): void {
     this.god = on;
   }
@@ -257,10 +285,15 @@ export class Game {
     const env = new Environment(profile, assets, this.pipeline.renderer);
     const shadows = profile.shadows === 'map';
     const chunks = new ChunkManager(env.scene, decor, obstacleModels, shadows);
-    const player = new Player(this.bus, profile);
+    const view =
+      assets && !profile.primitives ? new RiggedPlayerView(assets) : new PrimitivePlayerView();
+    const player = new Player(this.bus, profile, view);
     env.scene.add(player.root);
+    const chasers: ChaserView =
+      assets && !profile.primitives ? new Chasers(assets, shadows) : new PrimitiveChasers();
+    env.scene.add(chasers.root);
 
-    this.world = { profile, env, chunks, player, materials };
+    this.world = { profile, env, chunks, player, chasers, materials };
     env.preloadSkies(['midday', 'golden', 'evening']);
     this.resize();
   }
@@ -269,6 +302,7 @@ export class Game {
     const w = this.world;
     w.chunks.dispose();
     w.player.dispose();
+    w.chasers.dispose();
     w.env.dispose();
     w.materials?.dispose();
   }
@@ -302,12 +336,15 @@ export class Game {
     this.bestZoneThisRun = 0;
     this.speed = speedAt(0);
     this.speedFactor = 1;
-    this.lastStumbleAt = null;
+    this.chase = createChase();
+    this.path.reset();
     this.crashTime = 0;
     this.gameOverShown = false;
 
     const w = this.world;
     w.player.reset();
+    w.chasers.reset();
+    this.path.record(0, 0, 0);
     this.rig.reset();
     w.env.snapToAtmosphere(0);
     w.chunks.reset((Math.random() * 0xffffffff) >>> 0);
@@ -317,9 +354,11 @@ export class Game {
     this.updateHud();
   }
 
-  private crash(): void {
+  /** Game over. `caught` = the chasers got her; otherwise she hit an obstacle. */
+  private crash(caught: boolean): void {
     if (!this.state.transition('gameover')) return;
-    this.world.player.crash();
+    if (!caught) onCrash(this.chase);
+    this.world.player.crash(caught);
     this.bus.emit('crash');
     this.crashTime = 0;
     this.finishRun();
@@ -379,7 +418,7 @@ export class Game {
       1,
       this.speedFactor + ((1 - C.stumbleSlowFactor) / C.stumbleRecover) * dt,
     );
-    this.speed = difficulty.speed * this.speedFactor;
+    this.speed = difficulty.speed * this.speedFactor * this.introFactor();
 
     const meters = this.speed * dt;
     this.travelled += meters;
@@ -393,7 +432,10 @@ export class Game {
     );
     this.updateZone();
     w.chunks.update(this.travelled, difficulty);
+    this.path.record(this.travelled, w.player.x, w.player.y);
+    stepChase(this.chase, dt, false);
     this.checkCollisions();
+    this.updateChasers(dt);
 
     this.rig.update(dt, w.player.x, w.player.y, this.speed / CONFIG.difficulty.maxSpeed);
     this.updateHud();
@@ -408,6 +450,7 @@ export class Game {
     w.chunks.update(this.travelled, getDifficulty(this.elapsed));
 
     w.player.update(dt, 0, false);
+    this.updateChasers(dt);
     this.rig.update(dt, w.player.x, w.player.y, 0);
 
     if (!this.gameOverShown && this.crashTime >= CONFIG.crash.screenDelay) {
@@ -429,6 +472,25 @@ export class Game {
     const w = this.world;
     this.pipeline.render(w.env.scene, this.rig.camera, dt, this.fxSpeed(), w.env.atmosphere.bloom);
     this.fps?.tick(dt, this.pipeline.renderer.info, this.level);
+  }
+
+  /** Lazi sprints off at the start: speed eases up over the chase intro. */
+  private introFactor(): number {
+    const c = CONFIG.chase;
+    return (
+      c.introSpeedStart + (1 - c.introSpeedStart) * smoothstep01(this.elapsed / c.introDuration)
+    );
+  }
+
+  private updateChasers(dt: number): void {
+    const w = this.world;
+    const ctx = this.chaseCtx;
+    ctx.chase = this.chase;
+    ctx.travelled = this.travelled;
+    ctx.speedNorm = this.speed / CONFIG.difficulty.maxSpeed;
+    ctx.player = w.player;
+    ctx.laziView = w.player.view instanceof RiggedPlayerView ? w.player.view : null;
+    w.chasers.update(dt, ctx);
   }
 
   /** 0 until the run is properly fast, then up to 1 at top speed (drives blur / speed lines). */
@@ -472,8 +534,12 @@ export class Game {
         const hit = testObstacleHit(box, ob);
         if (hit === 'none' || this.god) continue;
         o.hit = true;
-        if (hit === 'front' || resolveStumble(this.lastStumbleAt, this.elapsed) === 'crash') {
-          this.crash();
+        if (hit === 'front') {
+          this.crash(false);
+          return;
+        }
+        if (onStumble(this.chase)) {
+          this.crash(true);
           return;
         }
         this.stumble();
@@ -495,7 +561,6 @@ export class Game {
   }
 
   private stumble(): void {
-    this.lastStumbleAt = this.elapsed;
     this.speedFactor = CONFIG.collision.stumbleSlowFactor;
     this.world.player.bounceBack();
     this.bus.emit('stumble');
@@ -508,6 +573,7 @@ export class Game {
       distance: Math.floor(this.score.distance),
       multiplier: multiplierForDistance(this.score.distance),
       zone: this.currentZone().name,
+      chase: chaseMeter(this.chase),
     });
   }
 

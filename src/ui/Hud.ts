@@ -4,6 +4,8 @@ export interface HudValues {
   distance: number;
   multiplier: number;
   zone: string;
+  /** 0 = the thief is far behind, 1 = he has her. */
+  chase: number;
 }
 
 /** In-run overlay. DOM is only touched when a value actually changes. */
@@ -15,6 +17,8 @@ export class Hud {
   private readonly distance = this.stat('hud-distance', 'Distance');
   private readonly multiplier = document.createElement('div');
   private readonly zone = document.createElement('div');
+  private readonly chaseBar = document.createElement('div');
+  private readonly chaseFill = document.createElement('div');
   private readonly pauseButton = document.createElement('button');
   private last: Partial<HudValues> = {};
 
@@ -30,7 +34,20 @@ export class Hud {
     right.className = 'hud-col hud-right';
     this.multiplier.className = 'hud-mult';
     this.zone.className = 'hud-zone';
-    right.append(this.multiplier, this.distance.root, this.zone);
+    this.chaseBar.className = 'hud-chase';
+    this.chaseBar.setAttribute('role', 'meter');
+    this.chaseBar.setAttribute('aria-label', 'Chase: how close the thief is');
+    this.chaseBar.setAttribute('aria-valuemin', '0');
+    this.chaseBar.setAttribute('aria-valuemax', '100');
+    const chaseLabel = document.createElement('span');
+    chaseLabel.className = 'hud-chase-label';
+    chaseLabel.textContent = 'Thief';
+    this.chaseFill.className = 'hud-chase-fill';
+    const track = document.createElement('div');
+    track.className = 'hud-chase-track';
+    track.append(this.chaseFill);
+    this.chaseBar.append(chaseLabel, track);
+    right.append(this.multiplier, this.distance.root, this.zone, this.chaseBar);
 
     this.pauseButton.className = 'hud-pause';
     this.pauseButton.type = 'button';
@@ -54,6 +71,12 @@ export class Hud {
       this.multiplier.textContent = `x${values.multiplier}`;
     }
     if (values.zone !== last.zone) this.zone.textContent = values.zone;
+    const pct = Math.round(values.chase * 100);
+    if (pct !== Math.round((last.chase ?? -1) * 100)) {
+      this.chaseFill.style.width = `${pct}%`;
+      this.chaseFill.dataset.level = pct > 66 ? 'high' : pct > 33 ? 'mid' : 'low';
+      this.chaseBar.setAttribute('aria-valuenow', String(pct));
+    }
     this.last = values;
   }
 

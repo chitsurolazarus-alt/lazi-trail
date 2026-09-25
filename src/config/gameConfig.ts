@@ -175,8 +175,6 @@ export const CONFIG = {
     topForgiveness: 0.3,
     /** Same, for walkable roofs (so you can hop off the side of a train). */
     roofForgiveness: 0.6,
-    /** A second stumble within this many seconds is a crash. */
-    stumbleWindow: 3,
     stumbleSlowFactor: 0.6,
     /** Seconds to get back to full speed after a stumble. */
     stumbleRecover: 1.0,
@@ -199,8 +197,37 @@ export const CONFIG = {
   crash: {
     /** Seconds the world takes to roll to a halt after crashing. */
     stopTime: 0.5,
-    /** Seconds before the game-over screen appears. */
-    screenDelay: 0.9,
+    /** Seconds before the game-over screen appears (the chasers' bag-snatch plays first). */
+    screenDelay: 2.4,
+  },
+
+  /** The thief and his dog. Gaps are metres behind Lazi. */
+  chase: {
+    /** Run-start intro: the thief lunges for the bag, then falls in behind. */
+    introDuration: 2.2,
+    /** Lazi's speed at the very start of the intro, as a fraction of normal (she sprints off). */
+    introSpeedStart: 0.45,
+    introStartGap: 0.9,
+    /** How close they run when they are on her heels. */
+    closeGap: 4,
+    /** Out of view (behind the camera). */
+    farGap: 26,
+    /** Extra head start while Energy Drink Boost is active. */
+    boostGap: 60,
+    /** Seconds they stay close after the intro (clean running) before dropping back. */
+    startHold: 3,
+    /** Seconds they stay close after a stumble before dropping back. */
+    stumbleHold: 4,
+    /** m/s they fall back / catch up / are left behind while boosting. */
+    dropRate: 4,
+    catchRate: 30,
+    boostRate: 25,
+    /** A stumble while the gap is below this is a catch (game over). */
+    caughtGap: 8,
+    /** m/s the pair run at to reach Lazi when she crashes. */
+    snatchSpeed: 16,
+    /** The dog runs this many metres ahead of the thief. */
+    dogLead: 1.7,
   },
 } as const;
 
