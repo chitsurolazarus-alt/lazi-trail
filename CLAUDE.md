@@ -35,6 +35,10 @@ Profiles in `src/config/quality.ts`. Auto-detected on first run (phones/tablets 
 
 A thief and his dog chase Lazi (she carries a sports bag and medal). Pure logic in `systems/ChaseSystem.ts` + `PathHistory.ts` (they replay Lazi's exact route so they never clip obstacles); visuals in `entities/Chasers.ts`. Second stumble while they are close = caught; front hit on an obstacle = they run in and snatch the bag.
 
+## Audio (Phase 3)
+
+`src/systems/audio/`: `AudioManager` (context unlocked on first tap, Music/SFX/Ambience buses, mute, positional voices), `MusicEngine` (synthesised Amapiano-style loops: menu / run / shop, three layers driven by intensity, stings), `Ambience` (4 zone beds), `synth.ts` (coin, jump, whoosh, horns, pant, non-verbal thief voice…), `SampleBank` (34 CC0 MP3s from `tools/fetch-assets.mjs`), `AudioDirector` (game events → sound), `audioLogic.ts` (pure, tested). Volumes/mute saved via SaveManager (`ambienceVolume`, `muted`). `?gallery=audio` (dev) renders every voice offline and reports levels.
+
 ## Structure
 
 ```
@@ -67,5 +71,5 @@ World convention: the player stays at z = 0 running toward -Z; the world scrolls
 
 ## Phases
 
-1 Playable core · 2 Realistic world + chase (DONE, awaiting playtest) · 3 Music & sound · 4 Characters, profile & progression (save v2) · 5 Power-ups, polish, deploy.
+1 Playable core · 2 Realistic world + chase (DONE) · 3 Music & sound (DONE, awaiting playtest) · 4 Characters, profile & progression (save v2) · 5 Power-ups, polish, deploy.
 Build them in order, one at a time; wait for the owner's "continue" between phases. Phase status: see git log.
