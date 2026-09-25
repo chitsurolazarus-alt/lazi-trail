@@ -10,6 +10,7 @@ import { renderBox, renderGameOver, renderPaused, renderSecondChance } from './s
 import { renderSettings } from './screens/settings';
 import { renderShop, type ShopTab } from './screens/shop';
 import { button, el, fmt, hex, icon, meter } from './dom';
+import { pwa } from '../pwa';
 import type { RunSummary, UiHost } from './types';
 
 /** Screen-to-screen navigation, handed to every screen renderer. */
@@ -61,13 +62,20 @@ export class Screens implements Nav {
   /** What the character room is previewing (kept across re-renders of that screen). */
   charPreview: { char: string; outfit: string } | null = null;
 
+  /** True while the main menu is the current screen (so an install prompt can redraw it). */
+  private onMenu = false;
+
   constructor(readonly host: UiHost) {
     this.element.hidden = true;
+    pwa.onChange(() => {
+      if (this.onMenu) this.refresh();
+    });
   }
 
   /* ------------------------------------------------------------ lifecycle */
 
   hide(): void {
+    this.onMenu = false;
     this.clearTimers();
     this.renderCurrent = null;
     this.element.hidden = true;
@@ -99,6 +107,7 @@ export class Screens implements Nav {
 
   /** Show `render` as the current screen. It is called again by `refresh()`. */
   show(render: () => void): void {
+    this.onMenu = false;
     this.clearTimers();
     this.renderCurrent = render;
     render();
@@ -192,6 +201,7 @@ export class Screens implements Nav {
 
   menu(): void {
     this.show(() => this.renderMenu());
+    this.onMenu = true;
     this.host.music('menu');
   }
 
@@ -336,6 +346,21 @@ export class Screens implements Nav {
       panel.append(row);
     }
     panel.append(grid);
+    if (pwa.canOfferInstall) {
+      const install = button(
+        'Install Lazi Trail',
+        () => {
+          void pwa.install().then((res) => {
+            if (res.outcome === 'manual' && res.message) {
+              host.toasts.show({ title: 'Install Lazi Trail', text: res.message, kind: 'info' });
+            }
+          });
+        },
+        'small',
+      );
+      install.dataset.key = 'install';
+      panel.append(install);
+    }
     if (d.settings.showControls) panel.append(this.controlsHint());
     panel.append(this.creditLink());
     (panel.querySelector('[data-key="play"]') as HTMLElement | null)?.focus();

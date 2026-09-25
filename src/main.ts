@@ -7,6 +7,7 @@ import {
   readDeviceHints,
   type QualityLevel,
 } from './config/quality';
+import { pwa } from './pwa';
 import { SaveManager } from './save/SaveManager';
 
 const root = document.getElementById('app');
@@ -22,6 +23,7 @@ if (import.meta.env.DEV && galleryMode) {
 }
 
 async function start(root: HTMLElement): Promise<void> {
+  pwa.init();
   const save = new SaveManager();
   save.load();
 

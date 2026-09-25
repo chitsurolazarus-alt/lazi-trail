@@ -18,4 +18,9 @@ export default tseslint.config(
     files: ['*.js', '*.config.ts', 'tools/**/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
   },
+  {
+    // The service worker runs in a worker scope, not in the page.
+    files: ['public/sw.js'],
+    languageOptions: { globals: { ...globals.serviceworker } },
+  },
 );

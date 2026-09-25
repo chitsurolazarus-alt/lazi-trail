@@ -52,6 +52,7 @@ import {
   type ChaseState,
 } from '../systems/ChaseSystem';
 import { getDifficulty, speedAt } from '../systems/Difficulty';
+import { AdaptiveScale } from '../systems/AdaptiveScale';
 import { PathHistory } from '../systems/PathHistory';
 import { RenderPipeline } from '../systems/RenderPipeline';
 import {
@@ -180,6 +181,10 @@ export class Game {
   private speedFactor = 1;
   private chase: ChaseState = createChase();
   private readonly path = new PathHistory();
+  /** Lowers the render resolution on slow devices (`?adaptive=0` turns it off). */
+  private readonly adaptive = new AdaptiveScale();
+  private readonly adaptiveOn = new URLSearchParams(location.search).get('adaptive') !== '0';
+  private powerHudShown = false;
   private readonly chaseCtx = {
     chase: this.chase,
     path: this.path,
@@ -1027,9 +1032,19 @@ export class Game {
       this.fps?.tick(dt, this.pipeline.renderer.info, this.level);
       return;
     }
+    if (this.adaptiveOn) {
+      if (this.state.is('playing')) {
+        const scale = this.adaptive.update(dt);
+        if (scale !== null) this.pipeline.setRenderScale(scale);
+      } else this.adaptive.reset();
+    }
     const w = this.world;
     this.pipeline.render(w.env.scene, this.rig.camera, dt, this.fxSpeed(), w.env.atmosphere.bloom);
-    this.fps?.tick(dt, this.pipeline.renderer.info, this.level);
+    this.fps?.tick(
+      dt,
+      this.pipeline.renderer.info,
+      `${this.level}${this.adaptive.current < 1 ? ` @${Math.round(this.adaptive.current * 100)}%` : ''}`,
+    );
   }
 
   /** Lazi sprints off at the start: speed eases up over the chase intro. */
@@ -1282,6 +1297,10 @@ export class Game {
   }
 
   private updatePowerHud(): void {
+    const active =
+      this.boostTime > 0 || POWER_UP_IDS.some((id) => id !== 'boost' && this.power[id] > 0);
+    if (!active && !this.powerHudShown) return; // nothing to draw, nothing to clear: no allocation
+    this.powerHudShown = active;
     const list: Array<{ id: string; label: string; fraction: number }> = [];
     if (this.boostTime > 0) {
       list.push({

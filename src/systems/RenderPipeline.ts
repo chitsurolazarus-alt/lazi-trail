@@ -102,8 +102,17 @@ export class RenderPipeline {
     this.renderer.shadowMap.needsUpdate = true;
   }
 
+  /** Fraction of the normal resolution to render at (the adaptive scaler lowers it on slow devices). */
+  private renderScale = 1;
+
+  setRenderScale(scale: number): void {
+    if (scale === this.renderScale) return;
+    this.renderScale = scale;
+    this.applySize();
+  }
+
   private pixelRatio(): number {
-    return Math.min(window.devicePixelRatio || 1, this.profile.maxPixelRatio, 2);
+    return Math.min(window.devicePixelRatio || 1, this.profile.maxPixelRatio, 2) * this.renderScale;
   }
 
   private buildComposer(): void {
