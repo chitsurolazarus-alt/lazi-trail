@@ -21,6 +21,8 @@ export class Hud {
   private readonly chaseFill = document.createElement('div');
   private readonly pauseButton = document.createElement('button');
   private readonly muteButton = document.createElement('button');
+  private readonly player = document.createElement('div');
+  private readonly shield = document.createElement('div');
   private last: Partial<HudValues> = {};
 
   constructor(onPause: () => void, onMute: (muted: boolean) => void) {
@@ -29,7 +31,14 @@ export class Hud {
 
     const left = document.createElement('div');
     left.className = 'hud-col';
-    left.append(this.score.root, this.coins.root);
+    this.player.className = 'hud-player';
+    this.shield.className = 'hud-shield';
+    this.shield.hidden = true;
+    this.shield.setAttribute('role', 'img');
+    this.shield.setAttribute('aria-label', 'Shield active');
+    this.shield.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5z"/></svg><span>Shield</span>';
+    left.append(this.player, this.score.root, this.coins.root, this.shield);
 
     const right = document.createElement('div');
     right.className = 'hud-col hud-right';
@@ -66,6 +75,15 @@ export class Hud {
     this.element.append(left, right, this.pauseButton, this.muteButton);
   }
 
+  /** Who is running: shown top-left ("Thabo · Lv 4"). */
+  setPlayer(name: string, level: number): void {
+    this.player.textContent = `${name} · Lv ${level}`;
+  }
+
+  setShield(active: boolean): void {
+    this.shield.hidden = !active;
+  }
+
   /** Reflect the current mute state on the speaker button. */
   setMuted(muted: boolean): void {
     this.muteButton.setAttribute('aria-pressed', String(muted));
@@ -86,7 +104,8 @@ export class Hud {
     if (values.coins !== last.coins) this.coins.value.textContent = String(values.coins);
     if (values.distance !== last.distance) this.distance.value.textContent = `${values.distance} m`;
     if (values.multiplier !== last.multiplier) {
-      this.multiplier.textContent = `x${values.multiplier}`;
+      // Whole numbers stay 'x3'; a mission bonus shows as 'x3.15'.
+      this.multiplier.textContent = `x${Number(values.multiplier.toFixed(2))}`;
     }
     if (values.zone !== last.zone) this.zone.textContent = values.zone;
     const pct = Math.round(values.chase * 100);

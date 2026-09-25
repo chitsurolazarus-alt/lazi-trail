@@ -1,4 +1,5 @@
 import './ui/styles.css';
+import './ui/menus.css';
 import { Game } from './core/Game';
 import {
   QUALITY_LEVELS,

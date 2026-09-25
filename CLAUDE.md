@@ -9,7 +9,7 @@ Commands: `npm run dev | test | build | lint | format | assets` (`assets` re-fet
 
 ## Rules
 
-- All persistence through ONE `SaveManager`, key `lazitrail_save_v1` (v2 + migration arrives in Phase 4); every read/write in try/catch; save only at key moments (run end, settings change), never per frame.
+- All persistence through ONE `SaveManager`, key `lazitrail_save_v2` (v1 is read once and migrated, never modified; see `save/schema.ts` `migrate`); every read/write in try/catch; game changes go through `Progression` (`save.edit` copies, validates, saves); save only at key moments (run end, settings change), never per frame.
 - All tunable numbers live in `src/config/` (`gameConfig.ts`, `zones.ts`, `quality.ts`, `obstacles.ts`).
 - Game logic (scoring, difficulty, obstacle generator, chase, collision, motion, save schema, zone blending) = pure functions with unit tests in `tests/`.
 - Pool everything that spawns; dispose geometries/materials; cap DPR at 2; pause when tab hidden. Repeated things use InstancedMesh or merged geometry (coins, props, low-quality buildings, street kit).
@@ -39,6 +39,10 @@ A thief and his dog chase Lazi (she carries a sports bag and medal). Pure logic 
 
 `src/systems/audio/`: `AudioManager` (context unlocked on first tap, Music/SFX/Ambience buses, mute, positional voices), `MusicEngine` (synthesised Amapiano-style loops: menu / run / shop, three layers driven by intensity, stings), `Ambience` (4 zone beds), `synth.ts` (coin, jump, whoosh, horns, pant, non-verbal thief voice…), `SampleBank` (34 CC0 MP3s from `tools/fetch-assets.mjs`), `AudioDirector` (game events → sound), `audioLogic.ts` (pure, tested). Volumes/mute saved via SaveManager (`ambienceVolume`, `muted`). `?gallery=audio` (dev) renders every voice offline and reports levels.
 
+## Progression (Phase 4)
+
+`src/progression/` = pure rules + `Progression` service over the save: XP/levels (`xp.ts`), unlock rules (`unlocks.ts`), daily missions (`missions.ts`, seeded by date), login calendar (`login.ts`), 47 achievements (`achievements.ts`, all read from the save), mystery boxes (`box.ts`), name filter (`names.ts`). Tunables: `config/progression.ts` (XP curve, rewards, mission templates, prices, power-up upgrade costs) and `config/characters.ts` (roster, perks, outfits). `Game` applies perks (lane speed, jump height, stumble recovery, start shield, chase gap; magnet duration is stored for Phase 5), records a `RunStats` at run end and shows the `Report`. Menus: `ui/Screens.ts` router + `ui/screens/*`; 3D character room: `entities/Showroom.ts`. Character models load on demand (`AssetLoader.loadModel`). Dev: `__lazi.debugProgression()`.
+
 ## Structure
 
 ```
@@ -52,11 +56,12 @@ src/
                          Obstacle(+realisticModels), Coin (instanced CoinField), props, models (primitives)
   systems/               Collision, Scoring, Difficulty, ChaseSystem, PathHistory, ObstacleMotion, CameraRig,
                          RenderPipeline (composer), SpeedFxPass, Effects (particles)
-  save/                  SaveManager, schema
-  ui/                    Hud, Screens, Banner, Loading, FpsCounter, styles.css
+  save/                  SaveManager, schema (v2 + v1 migration)
+  progression/           Progression service, xp, unlocks, missions, login, achievements, box, names
+  ui/                    Hud, Screens (+screens/*), Toasts, Tutorial, Banner, Loading, FpsCounter, styles.css, menus.css
   config/                gameConfig, zones, quality, obstacles, colors
   dev/gallery.ts         model viewer, dev only
-tests/                   scoring, difficulty, obstacleGenerator, obstacleMotion, collision, chase, saveManager, zones
+tests/                   scoring, difficulty, obstacleGenerator, obstacleMotion, collision, chase, saveManager, saveMigration, progression, zones, audioLogic
 tools/fetch-assets.mjs   downloads + optimises all third-party assets, rewrites the CREDITS table
 public/assets/           textures/ (WebP), hdri/ (.hdr), models/ (meshopt GLB)
 ```
@@ -71,5 +76,5 @@ World convention: the player stays at z = 0 running toward -Z; the world scrolls
 
 ## Phases
 
-1 Playable core · 2 Realistic world + chase (DONE) · 3 Music & sound (DONE, awaiting playtest) · 4 Characters, profile & progression (save v2) · 5 Power-ups, polish, deploy.
+1 Playable core · 2 Realistic world + chase (DONE) · 3 Music & sound (DONE, awaiting playtest) · 4 Characters, profile & progression (DONE, awaiting playtest) · 5 Power-ups, polish, deploy.
 Build them in order, one at a time; wait for the owner's "continue" between phases. Phase status: see git log.

@@ -173,6 +173,12 @@ export class Progression {
     });
   }
 
+  resetTutorial(): void {
+    this.mutate((d) => {
+      d.player.tutorialDone = false;
+    });
+  }
+
   /** Make sure characters/outfits/achievements that are already earned are recorded (e.g. after a migration). */
   settleNow(): Report {
     return this.mutate(() => undefined).report;
