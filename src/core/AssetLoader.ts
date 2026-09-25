@@ -29,7 +29,10 @@ export const MODEL_KEYS = [
   'ped_business',
   'ped_farmer',
 ] as const;
-export type ModelKey = (typeof MODEL_KEYS)[number];
+
+/** Playable characters other than Lazi. Loaded on demand (each is ~0.5 MB). */
+export const CHARACTER_MODEL_KEYS = ['char_woman2', 'char_punk', 'char_adventurer'] as const;
+export type ModelKey = (typeof MODEL_KEYS)[number] | (typeof CHARACTER_MODEL_KEYS)[number];
 
 export const HDRI_KEYS = ['morning', 'midday', 'golden', 'evening'] as const;
 export type HdriKey = (typeof HDRI_KEYS)[number];
@@ -58,6 +61,7 @@ export class AssetLoader {
   private readonly gltfLoader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   private readonly rgbeLoader = new HDRLoader();
   private readonly pendingHdri = new Map<HdriKey, Promise<THREE.DataTexture>>();
+  private readonly pendingModels = new Map<ModelKey, Promise<GLTF>>();
 
   constructor(private readonly maxAnisotropy: number) {}
 
@@ -89,6 +93,21 @@ export class AssetLoader {
         report(onProgress, span, done / todo.length, 'Meeting the neighbours');
       }),
     );
+  }
+
+  /** Load one extra model (a playable character) on demand; concurrent calls share one request. */
+  loadModel(key: ModelKey): Promise<GLTF> {
+    const cached = this.models.get(key);
+    if (cached) return Promise.resolve(cached);
+    let pending = this.pendingModels.get(key);
+    if (!pending) {
+      pending = this.gltfLoader.loadAsync(`${base()}assets/models/${key}.glb`).then((gltf) => {
+        this.models.set(key, gltf);
+        return gltf;
+      });
+      this.pendingModels.set(key, pending);
+    }
+    return pending;
   }
 
   /** Load one equirectangular HDR sky (cached; concurrent calls share one request). */
@@ -138,6 +157,7 @@ export class AssetLoader {
     this.models.clear();
     this.hdris.clear();
     this.pendingHdri.clear();
+    this.pendingModels.clear();
   }
 }
 

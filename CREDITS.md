@@ -33,5 +33,8 @@ Built by [Lazarus Chitsuro](https://github.com/chitsurolazarus-alt).
 | 3D model "Shiba Inu" (dog) | Quaternius | [Poly Pizza](https://poly.pizza/m/y4wdQpg767) | CC0 1.0 |
 | 3D model "Worker" (ped_worker) | Quaternius | [Poly Pizza](https://poly.pizza/m/Yg2bQZO6Hj) | CC0 1.0 |
 | 3D model "Business Man" (ped_business) | Quaternius | [Poly Pizza](https://poly.pizza/m/JFrLIKqvCH) | CC0 1.0 |
+| 3D model "Animated Woman (2)" (char_woman2) | Quaternius | [Poly Pizza](https://poly.pizza/m/qJ2gsTUBHL) | CC0 1.0 |
+| 3D model "Punk" (char_punk) | Quaternius | [Poly Pizza](https://poly.pizza/m/djXoqejw6w) | CC0 1.0 |
+| 3D model "Adventurer" (char_adventurer) | Quaternius | [Poly Pizza](https://poly.pizza/m/ZwF0K7WBmu) | CC0 1.0 |
 | 3D model "Farmer" (ped_farmer) | Quaternius | [Poly Pizza](https://poly.pizza/m/7pn3R6hPvE) | CC0 1.0 |
 <!-- ASSETS:END -->

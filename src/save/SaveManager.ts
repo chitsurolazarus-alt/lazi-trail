@@ -1,4 +1,5 @@
 import {
+  LEGACY_SAVE_KEY_V1,
   SAVE_KEY,
   defaultSave,
   sanitizeSave,
@@ -24,6 +25,9 @@ function browserStorage(): StorageLike | null {
 }
 
 export interface RunResult {
+  /** Who ran and as whom (shown on the leaderboard). */
+  name?: string;
+  character?: string;
   score: number;
   distance: number;
   coins: number;
@@ -43,12 +47,20 @@ export class SaveManager {
 
   constructor(private readonly storage: StorageLike | null = browserStorage()) {}
 
+  /** Read the save. A v1 save is migrated to v2 and written under the new key (v1 is left alone). */
   load(): SaveData {
     try {
       const text = this.storage?.getItem(SAVE_KEY);
       if (text) {
         this.data = sanitizeSave(JSON.parse(text));
         this.hadSave = true;
+      } else {
+        const legacy = this.storage?.getItem(LEGACY_SAVE_KEY_V1);
+        if (legacy) {
+          this.data = sanitizeSave(JSON.parse(legacy));
+          this.hadSave = true;
+          this.save();
+        }
       }
     } catch {
       this.data = defaultSave();
@@ -70,6 +82,17 @@ export class SaveManager {
     }
   }
 
+  /**
+   * Change the save: `fn` edits a private copy, which is then validated and stored. Whatever `fn`
+   * throws leaves the current save untouched.
+   */
+  edit(fn: (draft: SaveData) => void): void {
+    const draft = structuredClone(this.data);
+    fn(draft);
+    this.data = sanitizeSave(draft);
+    this.save();
+  }
+
   updateSettings(patch: Partial<SaveSettings>): void {
     this.data = { ...this.data, settings: { ...this.data.settings, ...patch } };
     this.save();
@@ -84,6 +107,8 @@ export class SaveManager {
     const newHighScore = run.score > d.highScore;
     const newBestZone = run.zone > d.bestZone;
     const entry: LeaderboardEntry = {
+      name: run.name?.trim() || d.player.name || 'Runner',
+      character: run.character ?? d.characters.selected,
       score: run.score,
       distance: Math.floor(run.distance),
       zone: run.zone,
@@ -95,6 +120,7 @@ export class SaveManager {
       bestDistance: Math.max(d.bestDistance, Math.floor(run.distance)),
       bestZone: Math.max(d.bestZone, run.zone),
       totalCoins: d.totalCoins + run.coins,
+      rand: d.rand + run.coins,
       stats: {
         runs: d.stats.runs + 1,
         totalCoins: d.stats.totalCoins + run.coins,

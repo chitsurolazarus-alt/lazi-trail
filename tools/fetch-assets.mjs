@@ -82,19 +82,22 @@ const MODELS = {
     'Yg2bQZO6Hj',
     '3a5f3056-ffe6-42eb-bd52-122afcbd22b2',
     'Worker',
-    ['Walk', 'Idle_Neutral'],
+    ['Idle', 'Idle_Neutral', 'Run', 'Roll', 'HitRecieve', 'HitRecieve_2', 'Death', 'Wave', 'Walk'],
   ],
   ped_business: [
     'JFrLIKqvCH',
     'e599abbe-7d73-488c-9d7e-3ead281e705c',
     'Business Man',
-    ['Walk', 'Idle_Neutral'],
+    ['Idle', 'Idle_Neutral', 'Run', 'Roll', 'HitRecieve', 'HitRecieve_2', 'Death', 'Wave', 'Walk'],
   ],
+  char_woman2: ['qJ2gsTUBHL', 'ba7a1955-ea51-4cb9-a561-188bdef0a6c7', 'Animated Woman (2)', ['Idle','Idle_Neutral','Run','Roll','HitRecieve','HitRecieve_2','Death','Wave']],
+  char_punk: ['djXoqejw6w', '1d368679-1d9a-4d5c-9095-877144b02d00', 'Punk', ['Idle','Idle_Neutral','Run','Roll','HitRecieve','HitRecieve_2','Death','Wave']],
+  char_adventurer: ['ZwF0K7WBmu', '69689495-028d-4b81-8678-792338a5693e', 'Adventurer', ['Idle','Idle_Neutral','Run','Roll','HitRecieve','HitRecieve_2','Death','Wave']],
   ped_farmer: [
     '7pn3R6hPvE',
     '81f2f0cf-6f53-4b57-92ea-dba0928620f2',
     'Farmer',
-    ['Walk', 'Idle_Neutral'],
+    ['Idle', 'Idle_Neutral', 'Run', 'Roll', 'HitRecieve', 'HitRecieve_2', 'Death', 'Wave', 'Walk'],
   ],
 };
 

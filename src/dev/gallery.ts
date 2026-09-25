@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OBSTACLE_DEFS, type ObstacleKind } from '../config/gameConfig';
 import { QUALITY_PROFILES } from '../config/quality';
-import { AssetLoader } from '../core/AssetLoader';
+import { AssetLoader, CHARACTER_MODEL_KEYS } from '../core/AssetLoader';
 import { RealisticObstacleModels } from '../entities/realisticModels';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { RiggedPlayerView } from '../entities/RiggedPlayerView';
@@ -153,7 +153,14 @@ export async function runGallery(root: HTMLElement, mode: string): Promise<void>
 
   const mixers: THREE.AnimationMixer[] = [];
   if (mode === 'characters') {
-    const keys = ['lazi', 'thief', 'dog', 'ped_worker', 'ped_business', 'ped_farmer'] as const;
+    await Promise.all(CHARACTER_MODEL_KEYS.map((k) => assets.loadModel(k)));
+    const keys = [
+      'lazi',
+      'ped_worker',
+      'ped_business',
+      'ped_farmer',
+      ...CHARACTER_MODEL_KEYS,
+    ] as const;
     const wanted = params.get('clip');
     let x = 0;
     for (const key of keys) {
