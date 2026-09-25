@@ -195,10 +195,13 @@ export const CONFIG = {
   },
 
   crash: {
+    /** Seconds of slow motion right after a crash, easing back to full speed. */
+    slowMoTime: 0.6,
+    slowMoScale: 0.25,
     /** Seconds the world takes to roll to a halt after crashing. */
     stopTime: 0.5,
     /** Seconds before the game-over screen appears (the chasers' bag-snatch plays first). */
-    screenDelay: 2.4,
+    screenDelay: 2.0,
   },
 
   /** The thief and his dog. Gaps are metres behind Lazi. */

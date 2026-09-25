@@ -225,10 +225,12 @@ export class Player {
     this.vy -= P.gravity * dt;
     this.y += this.vy * dt;
     if (this.y <= ground && this.vy <= 0) {
+      const impact = -this.vy;
       this.y = ground;
       this.vy = 0;
       this.grounded = true;
       this.view.trigger('land');
+      this.bus.emit('land', { impact });
       if (this.queuedSlide) {
         this.queuedSlide = false;
         this.startSlide();

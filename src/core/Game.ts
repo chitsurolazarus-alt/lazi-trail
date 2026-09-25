@@ -1,12 +1,20 @@
 import { CONFIG } from '../config/gameConfig';
 import { QUALITY_PROFILES, type QualityLevel, type QualityProfile } from '../config/quality';
-import { ZONES, zoneIndexAt, type ZoneDef } from '../config/zones';
+import { ZONES, type ZoneDef } from '../config/zones';
+import { Banner } from '../ui/Banner';
+import { ZoneManager } from '../world/ZoneManager';
 import { Player } from '../entities/Player';
 import { Chasers, type ChaseContext, type ChaserView } from '../entities/Chasers';
 import { PrimitiveChasers } from '../entities/PrimitiveChasers';
 import { PrimitivePlayerView } from '../entities/PrimitivePlayerView';
+import { Effects } from '../systems/Effects';
+import { Pedestrians, Pigeons } from '../world/Life';
 import { RiggedPlayerView } from '../entities/RiggedPlayerView';
-import { PrimitiveObstacleModels, type ObstacleModels } from '../entities/Obstacle';
+import {
+  PrimitiveObstacleModels,
+  type ObstacleInstance,
+  type ObstacleModels,
+} from '../entities/Obstacle';
 import { RealisticObstacleModels } from '../entities/realisticModels';
 import type { SaveManager } from '../save/SaveManager';
 import {
@@ -41,9 +49,11 @@ import { LoadingScreen } from '../ui/Loading';
 import { Screens } from '../ui/Screens';
 import { ChunkManager } from '../world/ChunkManager';
 import type { DecorFactory } from '../world/ChunkDecor';
+import { Backdrop } from '../world/Backdrop';
 import { Environment } from '../world/Environment';
 import { MaterialLibrary } from '../world/Materials';
 import { PrimitiveDecorFactory } from '../world/PrimitiveDecor';
+import { PropField } from '../world/PropField';
 import { RealisticDecorFactory } from '../world/ChunkDecor';
 import { StreetKit } from '../world/StreetKit';
 import { AssetLoader, type ProgressFn } from './AssetLoader';
@@ -66,6 +76,11 @@ interface World {
   chunks: ChunkManager;
   player: Player;
   chasers: ChaserView;
+  backdrop: Backdrop;
+  props: PropField | null;
+  effects: Effects;
+  pedestrians: Pedestrians | null;
+  pigeons: Pigeons | null;
   materials: MaterialLibrary | null;
 }
 
@@ -83,6 +98,8 @@ export class Game {
   private readonly hud: Hud;
   private readonly screens: Screens;
   private readonly loading = new LoadingScreen();
+  private readonly banner = new Banner();
+  private readonly zones = new ZoneManager();
   private readonly fps = FpsCounter.enabled() ? new FpsCounter() : null;
   private readonly input: Input;
   private readonly resizeObserver: ResizeObserver;
@@ -98,8 +115,6 @@ export class Game {
   private elapsed = 0;
   private clock = 0;
   private score: ScoreState = createScoreState();
-  private zoneIndex = 0;
-  private bestZoneThisRun = 0;
   private speed = 0;
   private speedFactor = 1;
   private chase: ChaseState = createChase();
@@ -117,6 +132,9 @@ export class Game {
   private spin = 0;
   /** Dev only: obstacles can't hurt. Toggle from the console via `__lazi.debugGod(true)`. */
   private god = false;
+  private stepTimer = 0;
+  /** World scroll speed (m/s) this frame, for particles. */
+  private worldSpeed = 0;
 
   // Scratch objects reused every frame to avoid allocations in the hot path.
   private readonly obstacleBox: ObstacleBox = {
@@ -147,11 +165,23 @@ export class Game {
       onQuality: (q) => void this.setQuality(q),
     });
     this.screens.setQuality(level);
-    root.append(canvas, this.hud.element, this.screens.element, this.loading.element);
+    root.append(
+      canvas,
+      this.hud.element,
+      this.banner.element,
+      this.screens.element,
+      this.loading.element,
+    );
     if (this.fps) root.append(this.fps.element);
 
     this.bus.on('stumble', () => this.rig.shake(0.35, 0.4));
     this.bus.on('crash', () => this.rig.shake(0.7, 0.6));
+    this.bus.on('land', ({ impact }) => this.onLand(impact));
+    this.bus.on('coin', ({ x, y, z, gold }) => this.world.effects.sparkle(x, y, z, gold));
+    this.bus.on('nearMiss', () => this.rig.pulse(4));
+    this.bus.on('zoneChange', ({ index }) =>
+      this.banner.show(ZoneManager.bannerText(ZONES[index] as ZoneDef)),
+    );
 
     this.input = new Input(root);
     this.input.onAction(this.onAction);
@@ -225,7 +255,7 @@ export class Game {
   debugSkipTo(distance: number): void {
     this.travelled = distance;
     this.score = { ...this.score, distance };
-    this.zoneIndex = zoneIndexAt(distance);
+    this.zones.reset(distance);
     this.world.chunks.reset((Math.random() * 0xffffffff) >>> 0);
     this.world.chunks.update(distance, getDifficulty(this.elapsed));
     this.world.env.snapToAtmosphere(distance);
@@ -284,7 +314,9 @@ export class Game {
 
     const env = new Environment(profile, assets, this.pipeline.renderer);
     const shadows = profile.shadows === 'map';
-    const chunks = new ChunkManager(env.scene, decor, obstacleModels, shadows);
+    const props = materials ? new PropField(materials, shadows, profile.propDensity) : null;
+    if (props) env.scene.add(props.object);
+    const chunks = new ChunkManager(env.scene, decor, obstacleModels, shadows, props);
     const view =
       assets && !profile.primitives ? new RiggedPlayerView(assets) : new PrimitivePlayerView();
     const player = new Player(this.bus, profile, view);
@@ -292,8 +324,32 @@ export class Game {
     const chasers: ChaserView =
       assets && !profile.primitives ? new Chasers(assets, shadows) : new PrimitiveChasers();
     env.scene.add(chasers.root);
+    const backdrop = new Backdrop();
+    env.scene.add(backdrop.object);
+    const effects = new Effects(profile.particles);
+    env.scene.add(effects.object);
+    const pedestrians =
+      assets && !profile.primitives && profile.pedestrians > 0
+        ? new Pedestrians(assets, profile.pedestrians, shadows)
+        : null;
+    const pigeons =
+      !profile.primitives && profile.pigeons > 0 ? new Pigeons(profile.pigeons) : null;
+    if (pedestrians) env.scene.add(pedestrians.object);
+    if (pigeons) env.scene.add(pigeons.object);
 
-    this.world = { profile, env, chunks, player, chasers, materials };
+    this.world = {
+      profile,
+      env,
+      chunks,
+      player,
+      chasers,
+      backdrop,
+      props,
+      effects,
+      pedestrians,
+      pigeons,
+      materials,
+    };
     env.preloadSkies(['midday', 'golden', 'evening']);
     this.resize();
   }
@@ -303,6 +359,11 @@ export class Game {
     w.chunks.dispose();
     w.player.dispose();
     w.chasers.dispose();
+    w.backdrop.dispose();
+    w.props?.dispose();
+    w.effects.dispose();
+    w.pedestrians?.dispose();
+    w.pigeons?.dispose();
     w.env.dispose();
     w.materials?.dispose();
   }
@@ -316,6 +377,7 @@ export class Game {
     if (!this.state.transition('playing')) return;
     this.screens.hide();
     this.hud.show(true);
+    this.banner.show(ZoneManager.bannerText(this.currentZone()));
   }
 
   private pause(): void {
@@ -332,8 +394,8 @@ export class Game {
     this.travelled = 0;
     this.elapsed = 0;
     this.score = createScoreState();
-    this.zoneIndex = 0;
-    this.bestZoneThisRun = 0;
+    this.zones.reset(0);
+    this.banner.hide();
     this.speed = speedAt(0);
     this.speedFactor = 1;
     this.chase = createChase();
@@ -344,6 +406,10 @@ export class Game {
     const w = this.world;
     w.player.reset();
     w.chasers.reset();
+    w.effects.clear();
+    w.pedestrians?.reset(0);
+    w.pigeons?.reset(0);
+    this.stepTimer = 0;
     this.path.record(0, 0, 0);
     this.rig.reset();
     w.env.snapToAtmosphere(0);
@@ -372,7 +438,7 @@ export class Game {
       score: totalScore(this.score),
       distance: this.score.distance,
       coins: this.score.coins,
-      zone: this.bestZoneThisRun,
+      zone: this.zones.bestIndex,
     });
     this.runRecord = {
       newRecord: result.newHighScore,
@@ -382,8 +448,15 @@ export class Game {
 
   /* ---------------------------------------------------------------- update */
 
-  private update(dt: number): void {
+  private update(rawDt: number): void {
     if (this.busy) return;
+    // A crash plays out in slow motion, easing back to normal speed.
+    let dt = rawDt;
+    if (this.state.is('gameover')) {
+      const c = CONFIG.crash;
+      dt *= c.slowMoScale + (1 - c.slowMoScale) * smoothstep01(this.crashTime / c.slowMoTime);
+    }
+    this.worldSpeed = 0;
     this.clock += dt;
     this.spin += dt * 4;
     this.world.chunks.animateCoins(this.spin);
@@ -404,7 +477,11 @@ export class Game {
     }
 
     const w = this.world;
+    w.effects.update(dt, this.worldSpeed, this.rig.camera);
+    w.pedestrians?.update(dt, this.travelled);
+    w.pigeons?.update(dt, this.travelled);
     w.env.update(this.travelled, this.rig.camera.position, this.clock, this.travelled);
+    w.backdrop.update(this.rig.camera, this.travelled, w.env.atmosphere);
     w.materials?.update(this.clock, w.env.atmosphere.night);
   }
 
@@ -421,15 +498,13 @@ export class Game {
     this.speed = difficulty.speed * this.speedFactor * this.introFactor();
 
     const meters = this.speed * dt;
+    this.worldSpeed = this.speed;
     this.travelled += meters;
     this.score = advanceDistance(this.score, meters);
 
-    w.player.update(
-      dt,
-      this.speed / CONFIG.difficulty.maxSpeed,
-      true,
-      w.chunks.groundAt(w.player.x, this.travelled),
-    );
+    const ground = w.chunks.groundAt(w.player.x, this.travelled);
+    w.player.update(dt, this.speed / CONFIG.difficulty.maxSpeed, true, ground);
+    this.footsteps(dt, ground);
     this.updateZone();
     w.chunks.update(this.travelled, difficulty);
     this.path.record(this.travelled, w.player.x, w.player.y);
@@ -446,7 +521,8 @@ export class Game {
     const w = this.world;
     this.crashTime += dt;
     const brake = Math.max(0, 1 - this.crashTime / CONFIG.crash.stopTime);
-    this.travelled += this.speed * brake * dt;
+    this.worldSpeed = this.speed * brake;
+    this.travelled += this.worldSpeed * dt;
     w.chunks.update(this.travelled, getDifficulty(this.elapsed));
 
     w.player.update(dt, 0, false);
@@ -501,15 +577,12 @@ export class Game {
   }
 
   private currentZone(): ZoneDef {
-    return ZONES[this.zoneIndex] as ZoneDef;
+    return this.zones.zone;
   }
 
   private updateZone(): void {
-    const index = zoneIndexAt(this.score.distance);
-    if (index === this.zoneIndex) return;
-    this.zoneIndex = index;
-    this.bestZoneThisRun = Math.max(this.bestZoneThisRun, index);
-    this.bus.emit('zoneChange', { index });
+    const entered = this.zones.update(this.score.distance);
+    if (entered !== null) this.bus.emit('zoneChange', { index: entered });
   }
 
   private checkCollisions(): void {
@@ -532,7 +605,11 @@ export class Game {
         ob.ramp = o.def.ramp?.length ?? 0;
 
         const hit = testObstacleHit(box, ob);
-        if (hit === 'none' || this.god) continue;
+        if (hit === 'none') {
+          this.checkNearMiss(o, box.x);
+          continue;
+        }
+        if (this.god) continue;
         o.hit = true;
         if (hit === 'front') {
           this.crash(false);
@@ -555,9 +632,44 @@ export class Game {
         c.mesh.visible = false;
         const value = c.kind === 'gold' ? CONFIG.scoring.goldValue : CONFIG.scoring.silverValue;
         this.score = addCoins(this.score, value);
-        this.bus.emit('coin', { value });
+        this.bus.emit('coin', {
+          value,
+          x: c.x,
+          y: c.y,
+          z: -(c.s - this.travelled),
+          gold: c.kind === 'gold',
+        });
       }
     }
+  }
+
+  /** Whoosh: a lane-blocking obstacle passed within a hand's breadth of Lazi. */
+  private checkNearMiss(o: ObstacleInstance, playerX: number): void {
+    if (o.nearMissed || o.def.requirement !== 'lane' || this.speed < 12) return;
+    const gap = Math.abs(playerX - o.x) - (CONFIG.player.halfWidth + o.def.halfWidth);
+    if (gap < 0.35 && gap > -0.001) {
+      o.nearMissed = true;
+      this.bus.emit('nearMiss');
+    }
+  }
+
+  /** Footstep dust while running, heavier while sliding. */
+  private footsteps(dt: number, ground: number): void {
+    const p = this.world.player;
+    if (!p.isGrounded) return;
+    this.stepTimer -= dt;
+    if (this.stepTimer > 0) return;
+    const speedNorm = this.speed / CONFIG.difficulty.maxSpeed;
+    this.stepTimer = 0.34 - 0.16 * speedNorm;
+    this.world.effects.dust(p.x, ground, 0.3, p.isSliding ? 1.4 : 0.55);
+  }
+
+  private onLand(impact: number): void {
+    if (impact < 6) return;
+    const w = this.world;
+    const k = Math.min(1, impact / 25);
+    w.effects.landing(w.player.x, w.player.y, 0.1, k);
+    this.rig.impact(0.06 + 0.16 * k);
   }
 
   private stumble(): void {

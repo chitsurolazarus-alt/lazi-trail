@@ -6,6 +6,7 @@ import type { ObstacleInstance, ObstaclePool } from '../entities/Obstacle';
 import { movingNearEdge } from '../systems/ObstacleMotion';
 import type { ChunkDecor } from './ChunkDecor';
 import type { GeneratedSection } from './ObstacleGenerator';
+import { PropField } from './PropField';
 
 /**
  * One 40 m slice of track: scenery (a `ChunkDecor`) plus the obstacles and coins generated for it.
@@ -24,6 +25,9 @@ export class Chunk {
   /** Vehicles that drive toward the player. */
   movers: ObstacleInstance[] = [];
   coins: CoinInstance[] = [];
+  /** Street furniture records (see PropField), in this chunk's local space. */
+  readonly props = new Float32Array(PropField.maxPerChunk * PropField.stride);
+  propCount = 0;
 
   constructor(readonly decor: ChunkDecor) {
     this.group.add(decor.object);
@@ -65,6 +69,11 @@ export class Chunk {
     }
   }
 
+  /** Current scroll offset of this chunk (its z in world space). */
+  get scrollZ(): number {
+    return this.group.position.z;
+  }
+
   /** Hand everything spawned in this chunk back to the pools. */
   clear(obstaclePool: ObstaclePool, coinPool: CoinPool): void {
     for (const o of this.obstacles) obstaclePool.release(o.def.kind, o.mesh);
@@ -73,6 +82,7 @@ export class Chunk {
     this.ramps.length = 0;
     this.movers.length = 0;
     this.coins.length = 0;
+    this.propCount = 0;
   }
 
   /** Advance every moving vehicle to where it is when the player has run `travelled` metres. */

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config/gameConfig';
-import { zoneIndexAt } from '../config/zones';
+import { ZONES, zoneIndexAt } from '../config/zones';
 import { createRng } from '../core/random';
 import { CoinPool } from '../entities/Coin';
 import { ObstaclePool, type ObstacleModels } from '../entities/Obstacle';
@@ -8,6 +8,7 @@ import { Chunk } from './Chunk';
 import type { DecorFactory } from './ChunkDecor';
 import { surfaceHeight } from '../systems/ObstacleMotion';
 import { ObstacleGenerator, type GeneratorParams } from './ObstacleGenerator';
+import type { PropField } from './PropField';
 
 const W = CONFIG.world;
 const L = W.chunkLength;
@@ -31,6 +32,7 @@ export class ChunkManager {
     private readonly decor: DecorFactory,
     obstacleModels: ObstacleModels,
     castShadows = false,
+    private readonly props: PropField | null = null,
   ) {
     this.obstaclePool = new ObstaclePool(obstacleModels, castShadows);
     this.generator = new ObstacleGenerator(this.rng);
@@ -65,6 +67,10 @@ export class ChunkManager {
       const chunk = this.spare.pop() ?? new Chunk(this.decor.create());
       const section = this.generator.generate(this.nextStart + L, { ...params, zone });
       chunk.populate(this.nextStart, zone, section, this.obstaclePool, this.coinPool, this.rng);
+      if (this.props) {
+        const style = (ZONES[zone] ?? ZONES[0])?.style ?? 'township';
+        chunk.propCount = this.props.fill(chunk.props, style, this.rng);
+      }
       this.parent.add(chunk.group);
       this.active.push(chunk);
       this.nextStart += L;
@@ -74,6 +80,7 @@ export class ChunkManager {
       chunk.updateMoving(travelled);
       chunk.setScroll(travelled);
     }
+    this.props?.sync(this.active);
   }
 
   /** Height of the walkable surface (road, ramp or roof) at lateral `x`, track position `s`. */

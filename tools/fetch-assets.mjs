@@ -48,18 +48,60 @@ const HDRIS = {
 
 /** key -> [Poly Pizza model id, GLB url, display name, animations to keep] */
 const MODELS = {
-  lazi: ['kZ3DmIoGip', '90a9e2d4-053f-42f1-99a2-8f5e1180ea7f', 'Casual Character',
-    ['Idle', 'Idle_Neutral', 'Run', 'Walk', 'Roll', 'HitRecieve', 'HitRecieve_2', 'Death', 'Wave', 'Interact']],
-  thief: ['gKLBoRsyKe', 'bcd66ec5-5e81-4901-a222-47abc875fe2a', 'Hoodie Character',
-    ['Idle_Neutral', 'Run', 'Walk', 'Interact', 'Wave', 'HitRecieve']],
-  dog: ['y4wdQpg767', 'ba6d0ee3-bcc0-4ef0-9d3c-a3e245b41c77', 'Shiba Inu',
-    ['Idle', 'Gallop', 'Gallop_Jump', 'Attack', 'Walk']],
-  ped_worker: ['Yg2bQZO6Hj', '3a5f3056-ffe6-42eb-bd52-122afcbd22b2', 'Worker', ['Walk', 'Idle_Neutral']],
-  ped_business: ['JFrLIKqvCH', 'e599abbe-7d73-488c-9d7e-3ead281e705c', 'Business Man', ['Walk', 'Idle_Neutral']],
-  ped_farmer: ['7pn3R6hPvE', '81f2f0cf-6f53-4b57-92ea-dba0928620f2', 'Farmer', ['Walk', 'Idle_Neutral']],
+  lazi: [
+    'kZ3DmIoGip',
+    '90a9e2d4-053f-42f1-99a2-8f5e1180ea7f',
+    'Casual Character',
+    [
+      'Idle',
+      'Idle_Neutral',
+      'Run',
+      'Walk',
+      'Roll',
+      'HitRecieve',
+      'HitRecieve_2',
+      'Death',
+      'Wave',
+      'Interact',
+    ],
+  ],
+  thief: [
+    'gKLBoRsyKe',
+    'bcd66ec5-5e81-4901-a222-47abc875fe2a',
+    'Hoodie Character',
+    ['Idle_Neutral', 'Run', 'Walk', 'Interact', 'Wave', 'HitRecieve'],
+  ],
+  dog: [
+    'y4wdQpg767',
+    'ba6d0ee3-bcc0-4ef0-9d3c-a3e245b41c77',
+    'Shiba Inu',
+    ['Idle', 'Gallop', 'Gallop_Jump', 'Attack', 'Walk'],
+  ],
+  ped_worker: [
+    'Yg2bQZO6Hj',
+    '3a5f3056-ffe6-42eb-bd52-122afcbd22b2',
+    'Worker',
+    ['Walk', 'Idle_Neutral'],
+  ],
+  ped_business: [
+    'JFrLIKqvCH',
+    'e599abbe-7d73-488c-9d7e-3ead281e705c',
+    'Business Man',
+    ['Walk', 'Idle_Neutral'],
+  ],
+  ped_farmer: [
+    '7pn3R6hPvE',
+    '81f2f0cf-6f53-4b57-92ea-dba0928620f2',
+    'Farmer',
+    ['Walk', 'Idle_Neutral'],
+  ],
 };
 
-const exists = (p) => fs.access(p).then(() => true, () => false);
+const exists = (p) =>
+  fs.access(p).then(
+    () => true,
+    () => false,
+  );
 const fetchBuf = async (url) => {
   const res = await fetch(url, { headers: { 'User-Agent': 'lazi-trail-asset-fetch' } });
   if (!res.ok) throw new Error(`${res.status} ${url}`);
@@ -90,7 +132,10 @@ async function doTextures() {
       const out = path.join(OUT, 'textures', `${key}_${suffix}.webp`);
       if (!FORCE && (await exists(out))) continue;
       const buf = await fetchBuf(url);
-      const info = await sharp(buf).resize(size, size, { fit: 'inside' }).webp({ quality }).toFile(out);
+      const info = await sharp(buf)
+        .resize(size, size, { fit: 'inside' })
+        .webp({ quality })
+        .toFile(out);
       console.log(`texture ${key}_${suffix}.webp  ${kb(info.size)}`);
     }
   }
@@ -120,7 +165,9 @@ async function doModels() {
     credits.models.push({ key, name, pizzaId });
     const out = path.join(OUT, 'models', `${key}.glb`);
     if (!FORCE && (await exists(out))) continue;
-    const doc = await io.readBinary(new Uint8Array(await fetchBuf(`https://static.poly.pizza/${uuid}.glb`)));
+    const doc = await io.readBinary(
+      new Uint8Array(await fetchBuf(`https://static.poly.pizza/${uuid}.glb`)),
+    );
     const root = doc.getRoot();
     const wanted = new Set(keep);
     const seen = new Set();
@@ -148,13 +195,19 @@ async function writeCredits() {
   const rows = [];
   rows.push('| Asset | Author | Source | Licence |', '| ----- | ------ | ------ | ------- |');
   for (const t of credits.textures) {
-    rows.push(`| PBR texture "${t.name}" (${t.key}) | ${t.authors} | [Poly Haven](https://polyhaven.com/a/${t.id}) | CC0 1.0 |`);
+    rows.push(
+      `| PBR texture "${t.name}" (${t.key}) | ${t.authors} | [Poly Haven](https://polyhaven.com/a/${t.id}) | CC0 1.0 |`,
+    );
   }
   for (const h of credits.hdris) {
-    rows.push(`| HDRI "${h.name}" (${h.key} sky) | ${h.authors} | [Poly Haven](https://polyhaven.com/a/${h.id}) | CC0 1.0 |`);
+    rows.push(
+      `| HDRI "${h.name}" (${h.key} sky) | ${h.authors} | [Poly Haven](https://polyhaven.com/a/${h.id}) | CC0 1.0 |`,
+    );
   }
   for (const m of credits.models) {
-    rows.push(`| 3D model "${m.name}" (${m.key}) | Quaternius | [Poly Pizza](https://poly.pizza/m/${m.pizzaId}) | CC0 1.0 |`);
+    rows.push(
+      `| 3D model "${m.name}" (${m.key}) | Quaternius | [Poly Pizza](https://poly.pizza/m/${m.pizzaId}) | CC0 1.0 |`,
+    );
   }
   const file = path.join(ROOT, 'CREDITS.md');
   const current = await fs.readFile(file, 'utf8');

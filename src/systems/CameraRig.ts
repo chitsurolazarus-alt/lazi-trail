@@ -14,10 +14,12 @@ export class CameraRig {
   private shakeMagnitude = 0;
   private shakeDuration = 0;
   private shakeTime = 0;
+  private impactDip = 0;
+  private fovPulse = 0;
   private readonly lookTarget = new THREE.Vector3();
 
   constructor(aspect: number) {
-    this.camera = new THREE.PerspectiveCamera(C.fovBase, aspect, 0.1, 400);
+    this.camera = new THREE.PerspectiveCamera(C.fovBase, aspect, 0.4, 2600);
     this.camera.position.set(0, C.height, C.distance);
     this.camera.lookAt(0, C.lookHeight, C.lookAheadZ);
   }
@@ -32,6 +34,16 @@ export class CameraRig {
     this.shakeMagnitude = magnitude;
     this.shakeDuration = duration;
     this.shakeTime = duration;
+  }
+
+  /** A quick downward bump (landing). */
+  impact(amount: number): void {
+    this.impactDip = Math.min(0.5, this.impactDip + amount);
+  }
+
+  /** A brief widening of the field of view (near miss, boost). */
+  pulse(degrees: number): void {
+    this.fovPulse = Math.max(this.fovPulse, degrees);
   }
 
   /** `speedNorm` is 0..1 (current speed relative to the cap). */
@@ -50,11 +62,17 @@ export class CameraRig {
       shakeY = Math.cos(t * 2.3) * amp;
     }
 
-    this.camera.position.set(this.x + shakeX, C.height + this.y + shakeY, C.distance);
+    this.impactDip = damp(this.impactDip, 0, 9, dt);
+    this.fovPulse = damp(this.fovPulse, 0, 6, dt);
+    this.camera.position.set(
+      this.x + shakeX,
+      C.height + this.y + shakeY - this.impactDip,
+      C.distance,
+    );
     this.lookTarget.set(this.x * 0.6, C.lookHeight + this.y * 0.5, C.lookAheadZ);
     this.camera.lookAt(this.lookTarget);
 
-    const targetFov = lerp(C.fovBase, C.fovMax, speedNorm);
+    const targetFov = lerp(C.fovBase, C.fovMax, speedNorm) + this.fovPulse;
     this.fov = damp(this.fov, targetFov, 3, dt);
     if (Math.abs(this.camera.fov - this.fov) > 0.01) {
       this.camera.fov = this.fov;
@@ -67,6 +85,8 @@ export class CameraRig {
     this.y = 0;
     this.fov = C.fovBase;
     this.shakeTime = 0;
+    this.impactDip = 0;
+    this.fovPulse = 0;
     this.camera.fov = C.fovBase;
     this.camera.updateProjectionMatrix();
   }

@@ -425,3 +425,60 @@ body {
 .hud-chase-fill[data-level='high'] {
   background: #ff4d4d;
 }
+
+/* ------------------------------------------------------------ Zone banner */
+
+.banner {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  z-index: 5;
+  transform: translate(-50%, 0);
+  opacity: 0;
+  pointer-events: none;
+  padding: 10px 26px;
+  border-radius: 14px;
+  background: linear-gradient(
+    90deg,
+    rgba(11, 42, 91, 0),
+    rgba(11, 42, 91, 0.82) 20%,
+    rgba(11, 42, 91, 0.82) 80%,
+    rgba(11, 42, 91, 0)
+  );
+  color: var(--offwhite);
+  font-size: clamp(20px, 4.5vw, 34px);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  text-shadow: 0 3px 0 rgba(11, 42, 91, 0.9);
+  border-top: 3px solid var(--orange);
+  border-bottom: 3px solid var(--orange);
+}
+
+.banner-show {
+  animation: banner-in-out 2.8s ease both;
+}
+
+@keyframes banner-in-out {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -14px) scale(0.92);
+  }
+  12%,
+  78% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-show {
+    animation-duration: 0.01s;
+    animation-name: none;
+    opacity: 1;
+  }
+}

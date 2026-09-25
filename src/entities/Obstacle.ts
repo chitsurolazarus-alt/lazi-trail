@@ -15,6 +15,8 @@ export interface ObstacleInstance {
   mesh: THREE.Object3D;
   /** Already resolved (stumbled on); ignored by further collision tests. */
   hit: boolean;
+  /** A near miss has already been reported for this obstacle. */
+  nearMissed?: boolean;
 }
 
 /** Supplies the visual for each obstacle kind (primitive shapes on Low, detailed models above). */
