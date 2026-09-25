@@ -40,7 +40,11 @@ function release(): Plugin {
   };
 }
 
+/** Sub-path the site is served from (GitHub Pages project sites use `/lazi-trail/`). Default: the domain root. */
+const BASE = process.env.BASE_PATH ?? '/';
+
 export default defineConfig({
+  base: BASE,
   plugins: [release()],
   build: {
     target: 'es2022',
