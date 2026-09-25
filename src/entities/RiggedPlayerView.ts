@@ -1,22 +1,11 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config/gameConfig';
+import { getCharacter, recolorFor, type CharacterId } from '../config/characters';
 import type { AssetLoader } from '../core/AssetLoader';
 import { damp } from '../core/math';
 import { Character } from './Character';
 import type { PlayerEvent, PlayerPose, PlayerView } from './PlayerView';
 import { createMedal, createSportsBag, type Prop } from './props';
-
-/** Lazi's look: orange tee, deep-blue shorts, orange running spikes. Colours per material name. */
-export const LAZI_RECOLOR = {
-  LightBrown: 0xff7a1a, // tee
-  LightBlue: 0x0b2a5b, // shorts
-  Red_Dark: 0xff7a1a, // spikes
-  White: 0xc9c5ba, // soles
-  Skin: 0x6b4126,
-  Skin_Darker: 0x5a3520,
-  Hair: 0x0c0806,
-  Eyebrows: 0x0c0806,
-} as const;
 
 /** Where in the Run cycle (seconds) legs and arms are most spread: used as the mid-air leap pose. */
 const LEAP_FRAME = 0.2;
@@ -24,7 +13,7 @@ const LEAP_FRAME = 0.2;
 type State = 'idle' | 'run' | 'air' | 'slide' | 'crash' | 'celebrate';
 
 /**
- * Lazi as a rigged, animated athlete. Cross-fades between Idle / Run / Roll (slide) / a frozen
+ * A playable runner (Lazi by default) as a rigged, animated athlete. Cross-fades between Idle / Run / Roll (slide) / a frozen
  * leap pose (jump) / flinch (stumble) / fall (crash) and keeps her bag and medal attached to
  * the skeleton so they move with her.
  */
@@ -38,11 +27,14 @@ export class RiggedPlayerView implements PlayerView {
   private stumbleTimer = 0;
   private bagAttached = true;
 
-  constructor(assets: AssetLoader) {
+  /** `characterId` / `outfitId` pick the model and colours (an unknown outfit id = the default outfit). */
+  constructor(assets: AssetLoader, characterId: CharacterId = 'lazi', outfitId = '') {
+    const def = getCharacter(characterId);
     this.character = new Character(assets, {
-      model: 'lazi',
+      model: def.model,
       scale: 1,
-      recolor: LAZI_RECOLOR,
+      recolor: recolorFor(def.id, outfitId),
+      hide: def.hideMeshes,
       roughness: 0.8,
     });
     this.object.add(this.character.root);

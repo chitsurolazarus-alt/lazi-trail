@@ -21,8 +21,11 @@ export class Player {
   x = 0;
   y = 0;
   alive = true;
-  /** Jump apex height (m); Super Spikes will raise this later. */
+  /** Jump apex height (m). Character perks scale the base; Super Spikes raise it further. */
   jumpHeight: number = P.jumpHeight;
+  /** Character perks: lane-change speed and jump height multipliers. */
+  private laneSpeedMul = 1;
+  private jumpMul = 1;
 
   private vy = 0;
   private grounded = true;
@@ -32,6 +35,7 @@ export class Player {
   private bufferedJump = 0;
   private queuedSlide = false;
   private groundY = 0;
+  private shadowsOn = false;
 
   private readonly pose: PlayerPose = {
     alive: true,
@@ -56,15 +60,47 @@ export class Player {
   constructor(
     private readonly bus: EventBus<GameEvents>,
     profile: QualityProfile,
-    readonly view: PlayerView,
+    public view: PlayerView,
   ) {
     this.root.add(view.object);
-    view.setShadows(profile.shadows === 'map');
+    this.shadowsOn = profile.shadows === 'map';
+    view.setShadows(this.shadowsOn);
 
     // A real shadow map replaces the blob; otherwise the blob keeps jumps readable.
     this.shadow = new THREE.Mesh(this.shadowGeometry, this.shadowMaterial);
     this.shadow.visible = profile.shadows !== 'map';
     this.root.add(this.shadow);
+  }
+
+  /** Swap in another character's model (menu only). */
+  setView(view: PlayerView): void {
+    this.root.remove(this.view.object);
+    this.view.dispose();
+    this.view = view;
+    this.root.add(view.object);
+    view.setShadows(this.shadowsOn);
+    view.reset();
+  }
+
+  /** Stand back up after a crash (Second Chance). Keeps the lane and position. */
+  revive(): void {
+    this.alive = true;
+    this.vy = 0;
+    this.grounded = true;
+    this.sliding = false;
+    this.slideTimer = 0;
+    this.bufferedJump = 0;
+    this.queuedSlide = false;
+    this.y = this.groundY;
+    this.view.reset();
+    this.syncTransform();
+  }
+
+  /** Apply the selected character's perks (call before `reset`). */
+  setPerks(perks: { laneSpeedMul: number; jumpHeightMul: number }): void {
+    this.laneSpeedMul = perks.laneSpeedMul;
+    this.jumpMul = perks.jumpHeightMul;
+    this.jumpHeight = P.jumpHeight * this.jumpMul;
   }
 
   reset(): void {
@@ -80,7 +116,7 @@ export class Player {
     this.queuedSlide = false;
     this.alive = true;
     this.groundY = 0;
-    this.jumpHeight = P.jumpHeight;
+    this.jumpHeight = P.jumpHeight * this.jumpMul;
     this.view.reset();
     this.syncTransform();
   }
@@ -200,7 +236,7 @@ export class Player {
 
   private updateLane(dt: number): void {
     const target = laneToX(this.lane);
-    const step = LANE_SPEED * dt;
+    const step = LANE_SPEED * this.laneSpeedMul * dt;
     const diff = target - this.x;
     this.x = Math.abs(diff) <= step ? target : this.x + Math.sign(diff) * step;
   }

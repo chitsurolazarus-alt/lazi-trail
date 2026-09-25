@@ -55,6 +55,14 @@ export class Input {
     const action = KEY_MAP[event.code];
     if (!action || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
     const active = document.activeElement;
+    // Typing in a text field or nudging a slider must not steer the runner.
+    if (
+      active instanceof HTMLInputElement ||
+      active instanceof HTMLTextAreaElement ||
+      active instanceof HTMLSelectElement
+    ) {
+      return;
+    }
     const onButton = active instanceof HTMLButtonElement || active instanceof HTMLAnchorElement;
     // Let a focused button/link handle Space/Enter natively so it doesn't fire twice.
     if (action === 'confirm' && onButton) return;
@@ -63,7 +71,8 @@ export class Input {
   };
 
   private onPointerDown = (event: PointerEvent): void => {
-    if ((event.target as HTMLElement).closest('button, a')) return;
+    // Menus scroll and click normally; only the bare game view counts as a swipe pad.
+    if ((event.target as HTMLElement).closest('button, a, input, .screens')) return;
     this.pointerId = event.pointerId;
     this.startX = event.clientX;
     this.startY = event.clientY;

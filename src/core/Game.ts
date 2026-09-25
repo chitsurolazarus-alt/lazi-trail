@@ -1,9 +1,12 @@
+import { NO_PERKS, type Perks } from '../config/characters';
 import { CONFIG } from '../config/gameConfig';
+import { HEAD_START, SECOND_CHANCE } from '../config/progression';
 import { QUALITY_PROFILES, type QualityLevel, type QualityProfile } from '../config/quality';
 import { ZONES, type ZoneDef } from '../config/zones';
 import { Banner } from '../ui/Banner';
 import { ZoneManager } from '../world/ZoneManager';
 import { Player } from '../entities/Player';
+import { Showroom } from '../entities/Showroom';
 import { Chasers, type ChaseContext, type ChaserView } from '../entities/Chasers';
 import { PrimitiveChasers } from '../entities/PrimitiveChasers';
 import { PrimitivePlayerView } from '../entities/PrimitivePlayerView';
@@ -20,6 +23,8 @@ import {
   type ObstacleModels,
 } from '../entities/Obstacle';
 import { RealisticObstacleModels } from '../entities/realisticModels';
+import { Progression, type ProgressEvent, type Report } from '../progression/Progression';
+import type { RunStats } from '../progression/types';
 import type { SaveManager } from '../save/SaveManager';
 import {
   coinTouched,
@@ -34,6 +39,7 @@ import {
   onCrash,
   onStumble,
   stepChase,
+  type ChasePhase,
   type ChaseState,
 } from '../systems/ChaseSystem';
 import { getDifficulty, speedAt } from '../systems/Difficulty';
@@ -51,6 +57,10 @@ import { FpsCounter } from '../ui/FpsCounter';
 import { Hud } from '../ui/Hud';
 import { LoadingScreen } from '../ui/Loading';
 import { Screens } from '../ui/Screens';
+import { Toasts } from '../ui/Toasts';
+import { Tutorial } from '../ui/Tutorial';
+import { rewardText } from '../ui/format';
+import type { RoomApi, UiHost, UiSound } from '../ui/types';
 import { ChunkManager } from '../world/ChunkManager';
 import type { DecorFactory } from '../world/ChunkDecor';
 import { Backdrop } from '../world/Backdrop';
@@ -72,6 +82,28 @@ type GameState = 'ready' | 'playing' | 'paused' | 'gameover';
 
 /** Only obstacles/coins within this many metres of the player are tested for collision. */
 const NEAR = 3;
+
+/** Counters for one run, handed to the progression system when it ends. */
+interface RunTally {
+  jumps: number;
+  slides: number;
+  nearMisses: number;
+  stumbles: number;
+  outruns: number;
+  /** Track distance at the last stumble (start of the current clean stretch). */
+  cleanSince: number;
+  bestClean: number;
+}
+
+const freshTally = (): RunTally => ({
+  jumps: 0,
+  slides: 0,
+  nearMisses: 0,
+  stumbles: 0,
+  outruns: 0,
+  cleanSince: 0,
+  bestClean: 0,
+});
 
 /** Everything that is rebuilt when the graphics quality changes. */
 interface World {
@@ -104,6 +136,9 @@ export class Game {
   private readonly screens: Screens;
   private readonly loading = new LoadingScreen();
   private readonly banner = new Banner();
+  private readonly toasts = new Toasts();
+  private readonly progress: Progression;
+  private readonly tutorial: Tutorial;
   private readonly audio: AudioManager;
   private readonly director: AudioDirector;
   private audioSaveTimer = 0;
@@ -116,6 +151,12 @@ export class Game {
 
   private assets: AssetLoader | null = null;
   private world!: World;
+  /** The character room (created the first time a room screen opens). */
+  private showroom: Showroom | null = null;
+  private roomActive = false;
+  /** `character:outfit` currently worn by the player view. */
+  private loadoutKey = '';
+  private loadoutQueue: Promise<void> = Promise.resolve();
   /** True while the world is being rebuilt (quality change); the loop idles. */
   private busy = true;
 
@@ -138,6 +179,24 @@ export class Game {
   } satisfies ChaseContext;
   private crashTime = 0;
   private gameOverShown = false;
+
+  // Progression / perks for the current run
+  private perks: Perks = { ...NO_PERKS };
+  private scoreBonus = 1;
+  private shield = false;
+  /** Seconds of Head Start (or later Energy Drink) sprint left: fast and invincible. */
+  private boostTime = 0;
+  /** Seconds of invincibility after a Second Chance. */
+  private invincible = 0;
+  private tally: RunTally = freshTally();
+  private lastChasePhase: ChasePhase = 'intro';
+  private crashCaught = false;
+  private secondChanceUsed = false;
+  private secondChanceOffered = false;
+  private secondChancePrompted = false;
+  private runFinalized = false;
+  private starting = false;
+  private runReport: Report | null = null;
   private spin = 0;
   /** Dev only: obstacles can't hurt. Toggle from the console via `__lazi.debugGod(true)`. */
   private god = false;
@@ -187,25 +246,19 @@ export class Game {
       (muted) => this.setMuted(muted),
     );
     this.hud.setMuted(s.muted);
-    this.screens = new Screens({
-      onStart: () => this.startRun(),
-      onResume: () => this.resume(),
-      onRestart: () => this.startRun(),
-      onQuality: (q) => void this.setQuality(q),
-      getAudio: () => ({ ...this.audio.settings }),
-      onVolume: (channel, value) => this.audio.setVolume(channel, value),
-      onVolumePreview: (channel) => {
-        if (channel === 'sfx') this.director.ui('select');
-      },
-      onMute: (muted) => this.setMuted(muted),
-    });
+
+    this.progress = new Progression(save);
+    this.progress.onEvent((e) => this.onProgressEvent(e));
+    this.tutorial = new Tutorial(() => this.progress.markTutorialDone());
+    this.screens = new Screens(this.makeUiHost());
     root.addEventListener('click', this.onUiClick);
-    this.screens.setQuality(level);
     root.append(
       canvas,
       this.hud.element,
       this.banner.element,
+      this.tutorial.element,
       this.screens.element,
+      this.toasts.element,
       this.loading.element,
     );
     if (this.fps) root.append(this.fps.element);
@@ -214,7 +267,16 @@ export class Game {
     this.bus.on('crash', () => this.rig.shake(0.7, 0.6));
     this.bus.on('land', ({ impact }) => this.onLand(impact));
     this.bus.on('coin', ({ x, y, z, gold }) => this.world.effects.sparkle(x, y, z, gold));
-    this.bus.on('nearMiss', () => this.rig.pulse(4));
+    this.bus.on('nearMiss', () => {
+      this.rig.pulse(4);
+      this.tally.nearMisses++;
+    });
+    this.bus.on('jump', () => this.tally.jumps++);
+    this.bus.on('slide', () => this.tally.slides++);
+    this.bus.on('shieldBreak', () => {
+      this.rig.shake(0.35, 0.3);
+      this.hud.setShield(false);
+    });
     this.bus.on('zoneChange', ({ index }) =>
       this.banner.show(ZoneManager.bannerText(ZONES[index] as ZoneDef)),
     );
@@ -234,10 +296,12 @@ export class Game {
     game.loading.show();
     await game.buildWorld(level, (t, label) => game.loading.set(t, label));
     game.resetRun();
-    game.screens.showReady();
     game.director.menu();
     game.busy = false;
     game.loading.hide();
+    // Grant anything a migrated save already qualifies for, then show the first screen.
+    game.progress.settleNow();
+    game.screens.showStart();
     game.loop = new GameLoop(
       (dt) => game.update(dt),
       (dt) => game.render(dt),
@@ -253,11 +317,11 @@ export class Game {
     this.loading.show();
     this.level = level;
     this.save.updateSettings({ quality: level });
-    this.screens.setQuality(level);
     await this.buildWorld(level, (t, label) => this.loading.set(t, label));
     this.resetRun();
     this.busy = false;
     this.loading.hide();
+    this.screens.refresh();
   }
 
   /** Read-only view of the run, handy for debugging and browser tests. */
@@ -311,6 +375,11 @@ export class Game {
     this.crash(caught);
   }
 
+  /** Dev helper: the progression service (`__lazi.debugProgression()`). */
+  debugProgression(): Progression {
+    return this.progress;
+  }
+
   debugGod(on: boolean): void {
     this.god = on;
   }
@@ -331,6 +400,8 @@ export class Game {
     this.root.removeEventListener('click', this.onUiClick);
     this.director.dispose();
     this.audio.dispose();
+    this.showroom?.dispose();
+    this.toasts.clear();
     this.resizeObserver.disconnect();
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.bus.clear();
@@ -384,8 +455,14 @@ export class Game {
     const props = materials ? new PropField(materials, shadows, profile.propDensity) : null;
     if (props) env.scene.add(props.object);
     const chunks = new ChunkManager(env.scene, decor, obstacleModels, shadows, props);
-    const view =
-      assets && !profile.primitives ? new RiggedPlayerView(assets) : new PrimitivePlayerView();
+    const runner = this.progress.selectedCharacter;
+    const outfit = this.progress.selectedOutfitId(runner.id);
+    let view: RiggedPlayerView | PrimitivePlayerView;
+    if (assets && !profile.primitives) {
+      await assets.loadModel(runner.model);
+      view = new RiggedPlayerView(assets, runner.id, outfit);
+    } else view = new PrimitivePlayerView();
+    this.loadoutKey = `${runner.id}:${outfit}`;
     const player = new Player(this.bus, profile, view);
     env.scene.add(player.root);
     const chasers: ChaserView =
@@ -438,20 +515,33 @@ export class Game {
 
   /* ------------------------------------------------------------------ flow */
 
-  private startRun(): void {
-    if (this.busy) return;
+  /** Begin a run (from the menu, Play again, or the pause menu's Restart). */
+  private startRun(headStart = false): void {
+    if (this.busy || this.starting) return;
+    this.starting = true;
+    // Wait for any pending character swap so the right runner is on the track.
+    void this.loadoutQueue.then(() => {
+      this.starting = false;
+      this.beginRun(headStart);
+    });
+  }
+
+  private beginRun(headStart: boolean): void {
     if (this.state.is('paused')) this.state.transition('ready');
+    const useHead = headStart && this.progress.useItem('headStart');
     this.resetRun();
     if (!this.state.transition('playing')) return;
+    this.boostTime = useHead ? HEAD_START.duration : 0;
     this.screens.hide();
     this.hud.show(true);
     this.banner.show(ZoneManager.bannerText(this.currentZone()));
     this.director.runStart();
+    if (!this.progress.data.player.tutorialDone) this.tutorial.start();
   }
 
   private pause(): void {
     if (!this.state.transition('paused')) return;
-    this.screens.showPaused();
+    this.screens.paused();
     this.director.pause();
   }
 
@@ -459,6 +549,149 @@ export class Game {
     if (!this.state.transition('playing')) return;
     this.screens.hide();
     this.director.resume();
+  }
+
+  /** Back to the main menu from the pause or game-over screen. */
+  private quitToMenu(): void {
+    if (this.state.is('paused') || this.state.is('gameover')) this.state.transition('ready');
+    else if (!this.state.is('ready')) return;
+    if (!this.runFinalized && this.secondChanceOffered) this.finalizeRun();
+    this.resetRun();
+    this.director.menu();
+    this.screens.menu();
+  }
+
+  /* ------------------------------------------------------- menu plumbing */
+
+  private makeUiHost(): UiHost {
+    const room: RoomApi = {
+      open: () => this.openRoom(),
+      close: () => {
+        this.roomActive = false;
+      },
+      show: async (character, outfit, locked) => {
+        const showroom = await this.ensureShowroom();
+        await showroom.show(character, outfit, locked);
+      },
+      celebrate: () => this.showroom?.celebrate(),
+      rotate: (dx) => this.showroom?.rotate(dx),
+    };
+    return {
+      progress: this.progress,
+      toasts: this.toasts,
+      room,
+      sound: (kind) => this.uiSound(kind),
+      getAudio: () => ({ ...this.audio.settings }),
+      setVolume: (channel, value) => this.audio.setVolume(channel, value),
+      previewVolume: (channel) => {
+        if (channel === 'sfx') this.director.ui('select');
+      },
+      setMuted: (muted) => this.setMuted(muted),
+      getQuality: () => this.level,
+      setQuality: (level) => void this.setQuality(level),
+      music: (track) => (track === 'shop' ? this.director.shop() : this.director.menu()),
+      startRun: ({ headStart }) => this.startRun(headStart),
+      resume: () => this.resume(),
+      restart: () => this.startRun(false),
+      quitToMenu: () => this.quitToMenu(),
+      secondChance: (accept) => this.answerSecondChance(accept),
+      loadoutChanged: () => this.applyLoadout(),
+      resetProgress: () => this.resetProgress(),
+      replayTutorial: () => this.progress.resetTutorial(),
+    };
+  }
+
+  private uiSound(kind: UiSound): void {
+    if (kind === 'purchase') this.director.purchase();
+    else if (kind === 'unlock') this.director.unlock();
+    else this.director.ui(kind);
+  }
+
+  /** Toasts and fanfare for the things progression reports. */
+  private onProgressEvent(e: ProgressEvent): void {
+    switch (e.type) {
+      case 'achievement':
+        this.toasts.show({
+          title: 'Achievement unlocked',
+          text: e.def.name,
+          icon: 'trophy',
+          kind: 'achievement',
+        });
+        this.director.unlock();
+        break;
+      case 'levelUp':
+        this.toasts.show({
+          title: `Level ${e.level}!`,
+          text: rewardText(e.reward),
+          icon: 'star',
+          kind: 'level',
+        });
+        break;
+      case 'unlock':
+        this.toasts.show({
+          title: e.note.kind === 'character' ? 'New runner unlocked' : 'New outfit unlocked',
+          text: e.note.name,
+          icon: 'star',
+          kind: 'unlock',
+        });
+        this.director.unlock();
+        break;
+      case 'missionDone':
+        this.toasts.show({
+          title: 'Mission complete',
+          text: `+R ${e.mission.reward}`,
+          icon: 'check',
+          kind: 'mission',
+        });
+        break;
+      case 'setDone':
+        this.toasts.show({
+          title: 'Daily set complete!',
+          text: 'Permanent score boost increased.',
+          icon: 'bolt',
+          kind: 'mission',
+        });
+        break;
+    }
+  }
+
+  /** Make the world's runner match the selected character and outfit (queued, so swaps never overlap). */
+  private applyLoadout(): void {
+    this.loadoutQueue = this.loadoutQueue.then(async () => {
+      const runner = this.progress.selectedCharacter;
+      const outfit = this.progress.selectedOutfitId(runner.id);
+      const key = `${runner.id}:${outfit}`;
+      if (key === this.loadoutKey || this.busy) return;
+      const assets = this.assets;
+      if (!assets || this.world.profile.primitives) {
+        this.loadoutKey = key;
+        return;
+      }
+      await assets.loadModel(runner.model);
+      this.world.player.setView(new RiggedPlayerView(assets, runner.id, outfit));
+      this.loadoutKey = key;
+    });
+  }
+
+  private async ensureShowroom(): Promise<Showroom> {
+    this.assets ??= new AssetLoader(Math.min(8, this.pipeline.maxAnisotropy));
+    if (!this.showroom) {
+      this.showroom = new Showroom(this.assets);
+      this.showroom.resize(Math.max(1, this.root.clientWidth), Math.max(1, this.root.clientHeight));
+    }
+    return this.showroom;
+  }
+
+  private openRoom(): void {
+    this.roomActive = true;
+    void this.ensureShowroom();
+  }
+
+  private resetProgress(): void {
+    this.save.reset();
+    this.applyLoadout();
+    this.progress.ensureMissions();
+    this.screens.name(true);
   }
 
   private setMuted(muted: boolean): void {
@@ -494,12 +727,29 @@ export class Game {
     this.banner.hide();
     this.speed = speedAt(0);
     this.speedFactor = 1;
-    this.chase = createChase();
+    this.perks = this.progress.perks();
+    this.scoreBonus = this.progress.scoreBonus();
+    this.chase = createChase(this.perks.chaseGapMul);
+    this.lastChasePhase = this.chase.phase;
     this.path.reset();
     this.crashTime = 0;
     this.gameOverShown = false;
+    this.shield = this.perks.startShield;
+    this.boostTime = 0;
+    this.invincible = 0;
+    this.tally = freshTally();
+    this.crashCaught = false;
+    this.secondChanceUsed = false;
+    this.secondChanceOffered = false;
+    this.secondChancePrompted = false;
+    this.runFinalized = false;
+    this.runReport = null;
+    this.tutorial.stop();
+    this.hud.setShield(this.shield);
+    this.hud.setPlayer(this.progress.name ?? 'Runner', this.progress.level.level);
 
     const w = this.world;
+    w.player.setPerks(this.perks);
     w.player.reset();
     w.chasers.reset();
     w.effects.clear();
@@ -523,24 +773,83 @@ export class Game {
     this.world.player.crash(caught);
     this.bus.emit('crash');
     this.crashTime = 0;
-    this.finishRun();
-    this.director.runEnd(caught, this.runRecord.newRecord);
+    this.crashCaught = caught;
+    this.tutorial.stop();
+    // With a Second Chance in the bag the run isn't over yet: ask before recording it.
+    this.secondChanceOffered = !this.secondChanceUsed && this.progress.data.items.secondChance > 0;
+    if (!this.secondChanceOffered) this.finalizeRun();
   }
 
-  /** Save the run's result (once). */
+  /** Record the run and play the end-of-run music (once). */
+  private finalizeRun(): void {
+    if (this.runFinalized) return;
+    this.runFinalized = true;
+    this.secondChanceOffered = false;
+    this.finishRun();
+    this.director.runEnd(this.crashCaught, this.runRecord.newRecord);
+  }
+
   private runRecord: { newRecord: boolean; best: number } = { newRecord: false, best: 0 };
 
+  /** Bank the run with the progression system (XP, missions, achievements, leaderboard). */
   private finishRun(): void {
-    const result = this.save.recordRun({
+    const t = this.tally;
+    const stats: RunStats = {
       score: totalScore(this.score),
       distance: this.score.distance,
       coins: this.score.coins,
       zone: this.zones.bestIndex,
-    });
+      jumps: t.jumps,
+      slides: t.slides,
+      nearMisses: t.nearMisses,
+      stumbles: t.stumbles,
+      outruns: t.outruns,
+      noStumble: Math.max(t.bestClean, this.score.distance - t.cleanSince),
+      caught: this.crashCaught,
+      character: this.progress.selectedCharacter.id,
+      name: this.progress.name ?? 'Runner',
+    };
+    this.runReport = this.progress.applyRun(stats);
     this.runRecord = {
-      newRecord: result.newHighScore,
+      newRecord: this.runReport.newHighScore,
       best: this.save.current.highScore,
     };
+  }
+
+  private answerSecondChance(accept: boolean): void {
+    if (!this.state.is('gameover') || !this.secondChanceOffered) return;
+    if (accept && this.progress.useItem('secondChance')) this.revive();
+    else this.finalizeRun(); // the game-over screen appears on the next frame
+  }
+
+  /** Second Chance: stand back up, shake off the thief, and run on briefly invincible. */
+  private revive(): void {
+    const w = this.world;
+    this.secondChanceUsed = true;
+    this.secondChanceOffered = false;
+    this.secondChancePrompted = false;
+    if (!this.state.transition('playing')) return;
+    this.screens.hide();
+    this.hud.show(true);
+    w.player.revive();
+    this.chase = createChase(this.perks.chaseGapMul);
+    this.chase.phase = 'far';
+    this.chase.gap = CONFIG.chase.farGap;
+    this.lastChasePhase = 'far';
+    w.chasers.reset();
+    this.speedFactor = CONFIG.collision.stumbleSlowFactor;
+    this.invincible = SECOND_CHANCE.invincible;
+    this.tally.cleanSince = this.score.distance;
+    // Clear the way ahead so she isn't run straight into the same obstacle.
+    for (const chunk of w.chunks.chunks) {
+      for (const o of chunk.obstacles) {
+        if (o.s > this.travelled - 5 && o.s < this.travelled + SECOND_CHANCE.clearAhead)
+          o.hit = true;
+      }
+    }
+    this.crashTime = 0;
+    this.gameOverShown = false;
+    this.director.resume();
   }
 
   /* ---------------------------------------------------------------- update */
@@ -552,6 +861,12 @@ export class Game {
     if (this.state.is('gameover')) {
       const c = CONFIG.crash;
       dt *= c.slowMoScale + (1 - c.slowMoScale) * smoothstep01(this.crashTime / c.slowMoTime);
+    }
+    if (this.roomActive && this.showroom && this.state.is('ready')) {
+      // The character room replaces the street while it is open.
+      this.showroom.update(rawDt);
+      this.updateAudio(rawDt);
+      return;
     }
     this.worldSpeed = 0;
     this.clock += dt;
@@ -609,16 +924,18 @@ export class Game {
     const difficulty = getDifficulty(this.elapsed);
 
     const C = CONFIG.collision;
-    this.speedFactor = Math.min(
-      1,
-      this.speedFactor + ((1 - C.stumbleSlowFactor) / C.stumbleRecover) * dt,
-    );
-    this.speed = difficulty.speed * this.speedFactor * this.introFactor();
+    const recover = C.stumbleRecover * this.perks.stumbleRecoverMul;
+    this.speedFactor = Math.min(1, this.speedFactor + ((1 - C.stumbleSlowFactor) / recover) * dt);
+    if (this.boostTime > 0) this.boostTime = Math.max(0, this.boostTime - dt);
+    if (this.invincible > 0) this.invincible = Math.max(0, this.invincible - dt);
+    const boostMul = this.boostTime > 0 ? HEAD_START.speedMul : 1;
+    this.speed = difficulty.speed * this.speedFactor * this.introFactor() * boostMul;
 
     const meters = this.speed * dt;
     this.worldSpeed = this.speed;
     this.travelled += meters;
-    this.score = advanceDistance(this.score, meters);
+    this.score = advanceDistance(this.score, meters, this.scoreBonus);
+    this.tutorial.update(dt);
 
     const ground = w.chunks.groundAt(w.player.x, this.travelled);
     w.player.update(dt, this.speed / CONFIG.difficulty.maxSpeed, true, ground);
@@ -626,7 +943,10 @@ export class Game {
     this.updateZone();
     w.chunks.update(this.travelled, difficulty);
     this.path.record(this.travelled, w.player.x, w.player.y);
-    stepChase(this.chase, dt, false);
+    stepChase(this.chase, dt, this.boostTime > 0);
+    // Shaking the thief off again after they closed in counts as an outrun.
+    if (this.lastChasePhase === 'dropping' && this.chase.phase === 'far') this.tally.outruns++;
+    this.lastChasePhase = this.chase.phase;
     this.checkCollisions();
     this.updateChasers(dt);
 
@@ -648,21 +968,39 @@ export class Game {
     this.rig.update(dt, w.player.x, w.player.y, 0);
 
     if (!this.gameOverShown && this.crashTime >= CONFIG.crash.screenDelay) {
-      this.gameOverShown = true;
-      this.hud.show(false);
-      this.screens.showGameOver({
-        score: totalScore(this.score),
-        distance: Math.floor(this.score.distance),
-        coins: this.score.coins,
-        zone: this.currentZone().name,
-        best: this.runRecord.best,
-        newRecord: this.runRecord.newRecord,
-      });
+      if (this.secondChanceOffered) {
+        if (!this.secondChancePrompted) {
+          this.secondChancePrompted = true;
+          this.hud.show(false);
+          this.screens.secondChance(
+            this.progress.data.items.secondChance,
+            SECOND_CHANCE.promptSeconds,
+          );
+        }
+      } else if (this.runFinalized && this.runReport) {
+        this.gameOverShown = true;
+        this.hud.show(false);
+        this.screens.gameOver({
+          score: totalScore(this.score),
+          distance: Math.floor(this.score.distance),
+          coins: this.score.coins,
+          zone: this.currentZone().name,
+          best: this.runRecord.best,
+          newRecord: this.runRecord.newRecord,
+          caught: this.crashCaught,
+          report: this.runReport,
+        });
+      }
     }
   }
 
   private render(dt: number): void {
     if (this.busy) return;
+    if (this.roomActive && this.showroom && this.state.is('ready')) {
+      this.pipeline.render(this.showroom.scene, this.showroom.camera, dt, 0, 0.3);
+      this.fps?.tick(dt, this.pipeline.renderer.info, this.level);
+      return;
+    }
     const w = this.world;
     this.pipeline.render(w.env.scene, this.rig.camera, dt, this.fxSpeed(), w.env.atmosphere.bloom);
     this.fps?.tick(dt, this.pipeline.renderer.info, this.level);
@@ -727,8 +1065,13 @@ export class Game {
           this.checkNearMiss(o, box.x);
           continue;
         }
-        if (this.god) continue;
+        if (this.god || this.boostTime > 0 || this.invincible > 0) continue;
         o.hit = true;
+        if (this.shield) {
+          this.shield = false;
+          this.bus.emit('shieldBreak');
+          continue;
+        }
         if (hit === 'front') {
           this.crash(false);
           return;
@@ -828,6 +1171,12 @@ export class Game {
   }
 
   private stumble(): void {
+    this.tally.stumbles++;
+    this.tally.bestClean = Math.max(
+      this.tally.bestClean,
+      this.score.distance - this.tally.cleanSince,
+    );
+    this.tally.cleanSince = this.score.distance;
     this.speedFactor = CONFIG.collision.stumbleSlowFactor;
     this.world.player.bounceBack();
     this.bus.emit('stumble');
@@ -838,7 +1187,7 @@ export class Game {
       score: totalScore(this.score),
       coins: this.score.coins,
       distance: Math.floor(this.score.distance),
-      multiplier: multiplierForDistance(this.score.distance),
+      multiplier: multiplierForDistance(this.score.distance, this.scoreBonus),
       zone: this.currentZone().name,
       chase: chaseMeter(this.chase),
     });
@@ -850,6 +1199,7 @@ export class Game {
     if (this.busy) return;
     const playing = this.state.is('playing');
     const player = this.world.player;
+    if (playing) this.tutorial.action(action);
     switch (action) {
       case 'left':
         if (playing) player.moveLeft();
@@ -864,10 +1214,9 @@ export class Game {
         if (playing) player.slide();
         break;
       case 'confirm':
+        // Menus use real buttons (Enter/Space activate the focused one); in a run Space jumps.
         if (playing) player.jump();
-        else if (this.state.is('ready') || (this.state.is('gameover') && this.gameOverShown)) {
-          this.startRun();
-        } else if (this.state.is('paused')) this.resume();
+        else if (this.state.is('paused')) this.resume();
         break;
       case 'pause':
         if (playing) this.pause();
@@ -890,5 +1239,6 @@ export class Game {
     const height = Math.max(1, this.root.clientHeight);
     this.pipeline.resize(width, height);
     this.rig.setAspect(width / height);
+    this.showroom?.resize(width, height);
   }
 }

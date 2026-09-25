@@ -220,7 +220,7 @@ export const ITEMS = {
     name: 'Head Start',
     price: 300,
     max: 10,
-    description: 'Blast off with a 5 second invincible sprint.',
+    description: 'Blast off with a short invincible sprint.',
   },
   secondChance: {
     name: 'Second Chance',
@@ -232,7 +232,7 @@ export const ITEMS = {
 export type ItemId = keyof typeof ITEMS;
 
 export const HEAD_START = { duration: 4.5, speedMul: 1.55 } as const;
-export const SECOND_CHANCE = { invincible: 2.5, clearAhead: 30 } as const;
+export const SECOND_CHANCE = { invincible: 2.5, clearAhead: 30, promptSeconds: 6 } as const;
 
 export type PowerUpId = 'magnet' | 'boost' | 'spikes' | 'doubleScore';
 
@@ -273,6 +273,8 @@ export const POWER_UPS: Readonly<
 };
 export const POWER_UP_IDS = Object.keys(POWER_UPS) as PowerUpId[];
 export const UPGRADE_MAX = 5;
+/** Flip when power-up pickups exist on the trail (Phase 5); the shop note depends on it. */
+export const POWER_UPS_LIVE = false;
 
 export function upgradeCost(id: PowerUpId, currentLevel: number): number {
   return POWER_UPS[id].costBase * 2 ** currentLevel;

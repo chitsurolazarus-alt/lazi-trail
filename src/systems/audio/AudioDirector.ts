@@ -66,6 +66,10 @@ export class AudioDirector {
     bus.on('crash', () => this.onCrash());
     bus.on('nearMiss', () => this.audio.synth((c, d, t) => synth.nearMiss(c, d, t)));
     bus.on('zoneChange', () => this.audio.synth((c, d, t) => synth.zoneSwoosh(c, d, t)));
+    bus.on('shieldBreak', () => {
+      this.audio.sample('clank_1', { volume: 0.9 });
+      this.audio.synth((c, d, t) => synth.powerDown(c, d, t));
+    });
     audio.whenReady(() => this.setupRumble());
   }
 
@@ -88,6 +92,11 @@ export class AudioDirector {
   /** Menu / ready screen. */
   menu(): void {
     this.setTrack('menu', 1.6);
+  }
+
+  /** Shop / character room. */
+  shop(): void {
+    this.setTrack('shop', 1.2);
   }
 
   runStart(): void {

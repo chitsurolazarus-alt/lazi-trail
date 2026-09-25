@@ -12,4 +12,6 @@ export interface GameEvents {
   stumble: void;
   crash: void;
   zoneChange: { index: number };
+  /** The Bongani-style shield soaked up a hit. */
+  shieldBreak: void;
 }

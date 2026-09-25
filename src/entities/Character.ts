@@ -10,6 +10,8 @@ export interface CharacterSpec {
   faceForward?: boolean;
   /** Override material colours by material name. */
   recolor?: Readonly<Record<string, number>>;
+  /** Meshes to hide by name (hard hats, farm hats that ship with the base model). */
+  hide?: readonly string[];
   /** Extra shine reduction so the flat-shaded low-poly bodies don't look plastic. */
   roughness?: number;
 }
@@ -52,6 +54,7 @@ export class Character {
     this.model.traverse((o) => {
       if (!(o instanceof THREE.Mesh || o instanceof THREE.SkinnedMesh)) return;
       o.frustumCulled = false; // skinned bounds are unreliable; there are only a handful
+      if (spec.hide?.includes(o.name)) o.visible = false;
       const list = Array.isArray(o.material) ? o.material : [o.material];
       const cloned = list.map((m) => {
         const c = m.clone() as THREE.MeshStandardMaterial;

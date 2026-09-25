@@ -23,12 +23,25 @@ export interface ChaseState {
   timer: number;
   /** How long to stay `close` before dropping back. */
   hold: number;
+  /** How near they run when on her heels (a character perk can push this back). */
+  closeGap: number;
+  /** Where the run-start lunge begins. */
+  introStartGap: number;
 }
 
 const C = CONFIG.chase;
 
-export function createChase(): ChaseState {
-  return { phase: 'intro', gap: C.introStartGap, timer: 0, hold: C.startHold };
+/** `gapMul` > 1 makes the pair start (and stay) further back; Zola's perk. */
+export function createChase(gapMul = 1): ChaseState {
+  const introStartGap = C.introStartGap * gapMul;
+  return {
+    phase: 'intro',
+    gap: introStartGap,
+    timer: 0,
+    hold: C.startHold,
+    closeGap: C.closeGap * gapMul,
+    introStartGap,
+  };
 }
 
 export function isFinished(state: ChaseState): boolean {
@@ -50,12 +63,12 @@ export function stepChase(state: ChaseState, dt: number, boosting = false): void
   switch (state.phase) {
     case 'intro': {
       const t = smoothstep01(state.timer / C.introDuration);
-      state.gap = C.introStartGap + (C.closeGap - C.introStartGap) * t;
+      state.gap = state.introStartGap + (state.closeGap - state.introStartGap) * t;
       if (state.timer >= C.introDuration) enter(state, 'close', C.startHold);
       break;
     }
     case 'close':
-      state.gap = C.closeGap;
+      state.gap = state.closeGap;
       if (state.timer >= state.hold) enter(state, 'dropping', state.hold);
       break;
     case 'dropping':
@@ -67,8 +80,8 @@ export function stepChase(state: ChaseState, dt: number, boosting = false): void
       state.gap = state.gap > C.farGap ? Math.max(C.farGap, state.gap - C.dropRate * dt) : C.farGap;
       break;
     case 'catching':
-      state.gap = Math.max(C.closeGap, state.gap - C.catchRate * dt);
-      if (state.gap <= C.closeGap) enter(state, 'close', C.stumbleHold);
+      state.gap = Math.max(state.closeGap, state.gap - C.catchRate * dt);
+      if (state.gap <= state.closeGap) enter(state, 'close', C.stumbleHold);
       break;
   }
 }
@@ -97,7 +110,7 @@ export function onCrash(state: ChaseState): void {
 /** 0 = safe, 1 = they have her. Drives the HUD chase meter. */
 export function chaseMeter(state: ChaseState): number {
   if (isFinished(state)) return 1;
-  return clamp(1 - (state.gap - C.closeGap) / (C.farGap - C.closeGap), 0, 1);
+  return clamp(1 - (state.gap - state.closeGap) / (C.farGap - state.closeGap), 0, 1);
 }
 
 function enter(state: ChaseState, phase: ChasePhase, hold: number): void {
