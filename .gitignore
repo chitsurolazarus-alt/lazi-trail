@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.*
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+.vscode/*
+!.vscode/extensions.json
