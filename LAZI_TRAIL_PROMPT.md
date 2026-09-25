@@ -83,18 +83,114 @@ Strict TS, ESLint + Prettier, no unjustified `any`; no leaks (dispose, pool); re
 
 Scene, lighting, fog, camera rig, resize; Lazi placeholder with lane switching, jump, slide, gravity; keyboard + swipe; endless chunk track with pooling; placeholder obstacles (stall, cart, parked taxi) and Rand coins; collision, stumble, crash, game over + restart; scoring, coins, difficulty ramp; minimal HUD; unit tests for scoring and difficulty. Stop when fully playable, then say how to run.
 
-## PHASE 2 — Look, feel & zones
+## Phases 2 to 5 (full text, supplied after Phase 1)
 
-4 zones via ZoneManager, banners, palettes, props, fog; moving taxis (Z2+), trains with ramps (Z3+); CC0 models where available (primitives fallback), Lazi run/jump/slide animations; Table Mountain, buildings, street details; audio (music loop + SFX: coin, jump, slide, stumble, crash, zone change) with volume; juice (shake, speed FOV, coin sparkle, dust); CREDITS.md.
+Working rules from the owner:
+- Build the phases in order (2 → 3 → 4 → 5). Break each phase into small steps with a commit per feature.
+- After each phase run `tsc`, ESLint, all tests and `npm run build`, then summarise: what changed, how to test it, what still needs playtesting. **Wait for the owner's "continue" before starting the next phase.**
+- Keep everything from Phase 1 working. Don't break save data (migrate it).
+- Keep all tunable numbers in `src/config/`.
+- Only CC0/CC-BY assets and royalty-free audio, every one logged in `CREDITS.md`. No copyrighted music, brands or characters.
+- Quality-setting plan approved: on mobile use baked or no shadows and light post-processing; desktop gets the full treatment. Auto-detect on first run, changeable in Settings, saved in localStorage.
 
-## PHASE 3 — Menus, shop & saving
+---
 
-Loading screen with progress, Main Menu (Play, Shop, Stats, Settings), Pause, Game Over (score, best, new-record banner); SaveManager + unit tests; Shop (outfits/colour skins for Rand); Stats with local top-10; Settings (volumes, controls hint, reset); credit line; brand styling; text logo.
+## PHASE 2 — Realistic, alive world + the chase
 
-## PHASE 4 — Power-ups & missions
+**Update first:** art direction is now **stylised-realistic** (done in `CLAUDE.md` / this file). Keep the Phase 1 primitives as the Low-quality fallback.
 
-All 4 power-ups with spawn logic, HUD timers, shop upgrades; 3 rotating daily missions raising score multiplier, saved in localStorage.
+### Rendering and lighting
+- `renderer.outputColorSpace = SRGBColorSpace`, **ACES Filmic tone mapping**, physically correct lighting
+- **HDRI environment lighting** from a CC0 Poly Haven sky HDRI (sunny Cape Town-style morning), plus a warm directional sun with **soft shadows** (shadow camera follows the player, nearby area only)
+- **Post-processing** (EffectComposer): subtle bloom, SMAA/FXAA, light vignette, small motion blur or speed lines at high speed
+- Atmospheric **height fog** per zone, and a sky that suits each zone (morning, midday, golden hour, stadium evening under floodlights)
+- **Quality settings: Low / Medium / High.** Auto-detect on first run (mobile → Medium), switch in Settings, save the choice. Low turns off shadows and post-processing and uses the fallback primitives.
 
-## PHASE 5 — Portfolio polish & deploy
+### Realistic buildings and streets (the main focus)
+- Real **CC0 / CC-BY assets**: Poly Haven (PBR textures: brick, plaster, corrugated iron, tar, pavement, concrete), Quaternius and Kenney city kits, CC-BY Sketchfab models where needed. Compress everything: **GLB + Draco/meshopt**, textures as **KTX2/Basis** or WebP at 1K max.
+- **Modular building kit** so each chunk assembles varied street fronts from parts (walls, windows, doors, roofs, balconies, signage) with random colours, weathering and details. Avoid a copy-paste look.
+- **Township Market:** colourful painted houses and spaza shops with corrugated-iron roofs, hand-painted signs (fictional shop names), washing lines, fences, satellite dishes, street stalls with fruit and goods
+- **City Streets:** multi-storey buildings with glass shopfronts, balconies and awnings, street lights, traffic lights, billboards (fictional brands only), bus stops, trees, road markings, pavements
+- **Train Yard:** platforms, overhead wires and poles, gravel, containers, fences with graffiti-style (original) art, **Table Mountain** backdrop
+- **Stadium Approach:** stadium structure growing in the distance, floodlights, crowd-banner flags, big screens
+- **InstancedMesh** for repeated props (lights, poles, fences, trees) and LODs or impostors for far buildings to keep draw calls low
+- **Life and movement:** pedestrians walking on the pavements (simple animated background characters), pigeons that fly off as Lazi passes, flags and washing moving in the wind, parked cars, taxis hooting, dust and leaves blowing, shadows from passing clouds
 
-Performance pass (draw calls, instancing, textures; test on mobile); PWA; SEO/OG/favicon; README (GIF, live link, controls, features, stack, architecture diagram, challenges & solutions, local run, credits); Cloudflare Pages instructions (`npm run build`, output `dist`); final cleanup and tests.
+### Characters and animation
+- Replace the placeholder Lazi with a **rigged, realistic-proportioned athlete** (Mixamo character or a CC0 model retargeted to Mixamo animations): run, sprint, jump, roll/slide, stumble, fall, idle, celebrate
+- Smooth blending with `AnimationMixer` (cross-fades, never snaps)
+
+### The chase: thief + dog
+- A **thief** (hoodie and cap, carrying a sack; cartoonish villain, never violent) and his **dog** chase Lazi, who carries his **sports bag and medal**
+- **Run start:** short intro. The thief tries to grab Lazi's bag, Lazi dodges and sprints off, the chase begins with the pair close behind.
+- After ~5 seconds of clean running they **fall back out of view**.
+- **On a stumble** they **catch up** and appear right behind Lazi (dog barking, thief shouting). A **second stumble while they're close = caught** (game over with a "caught" animation, e.g. the dog tugging at the bag).
+- They drop back again after a few clean seconds. Small **"chase meter"** in the HUD.
+- **Energy Drink Boost** makes Lazi pull far ahead. When a run ends by hitting an obstacle, they run past and snatch the bag in the game-over scene.
+- Animated dog (run, bark, jump) and thief (run, reach, laugh). Positions are driven by pure logic in `ChaseSystem.ts`, with unit tests.
+
+### Zones and obstacles
+- 4 zones with ZoneManager, zone banners, smooth transitions between palettes, props and fog
+- Moving minibus taxis (Zone 2+) with headlights and hooters; trains with ramps (Zone 3+) with horns and sparks
+- Realistic obstacle models: stalls, carts, taxis, trains, barriers
+- **Juice:** camera shake, speed FOV, coin sparkle, footstep dust, landing impact, near-miss "whoosh", slow-motion on crash
+- **60fps on High** on desktop and a steady frame rate on Medium on a mid-range phone. FPS counter in dev mode.
+- Update `CREDITS.md` with every asset, author and licence
+
+## PHASE 3 — Music and sound
+- **AudioManager** (Web Audio / Howler.js): separate **Music**, **SFX** and **Ambience** volume channels with mute, saved to localStorage. Unlock audio on first user tap.
+- **Music** (royalty-free only: Pixabay Music, OpenGameArt, Kenney, CC0/CC-BY; never copyrighted songs):
+  - Menu theme: chilled, South African vibe (Amapiano/Kwaito-inspired feel)
+  - In-run track: upbeat, crossfading into a more intense layer as speed rises and when chasers are close
+  - Game over sting, new-record fanfare, shop/character-room loop
+- **SFX:** footsteps (tar, gravel, train roof), jump, land, slide, lane-switch whoosh, coin pickup (pitch rises on streaks), power-up pickup and expiry, stumble, crash, dog bark and pant, thief shouts (non-verbal or short clean lines), taxi hooter, train horn, zone-change swoosh, UI clicks, purchase "cha-ching", unlock fanfare
+- **Ambience** per zone: market chatter and radio, city traffic, train-yard clanks, stadium crowd
+- **3D positional audio** for passing taxis, trains and the chasers
+- Update `CREDITS.md` with every audio file and licence
+
+## PHASE 4 — Characters, player profile and progression
+### Player profile
+- First launch: **"Name your runner" screen**. Player name 3–16 chars, bad-word filtered, editable in Settings. Shown on HUD, game-over screen and local leaderboard.
+- Profile screen: name, **player level and XP bar**, total runs, best score, best zone, characters owned, achievements earned
+
+### Character roster (all original South African characters)
+Each has a name, short bio, unique outfit, and one small **perk**:
+
+| Character | Bio | How to unlock | Perk |
+|---|---|---|---|
+| **Lazi** | Sprinter training for the big race | Free (default) | None, the all-rounder |
+| **Thandi** | Netball star, quick feet | 2,500 Rand | Faster lane switches |
+| **Sipho** | Footballer from the township | Reach Zone 3 | Coin magnet lasts longer |
+| **Naledi** | Long jumper | 10 daily-mission streak | Higher jumps |
+| **Kagiso** | Marathon runner | 15,000 Rand | Recovers from stumbles faster |
+| **Bongani** | Rugby player | Complete 25 achievements | Starts each run with a shield |
+| **Zola** (secret) | Mystery runner | Collect 10 "Golden Medals" found rarely during runs | Chasers start further back |
+
+- **Outfits and skins** per character (tracksuits, team kits, colour variants) bought with Rand, plus a few rare outfits only from achievements
+- **Character room:** 3D showroom, character rotates, plays idle and celebrate animations, shows perk, bio and unlock requirement. Locked characters appear as silhouettes.
+- Perks small and balanced, all defined in `config/characters.ts`
+
+### Game features players expect
+- **XP and player levels:** XP every run, level-ups give rewards (Rand, outfits, profile badges)
+- **Daily login rewards:** 7-day calendar, bigger reward on day 7, streak resets if a day is missed (device date)
+- **Daily missions:** 3 per day, rerolls for Rand. Completing a set raises the permanent score multiplier.
+- **Achievements:** 30+ (e.g. "Outrun the dog 50 times", "Reach the Stadium", "Collect 1,000 Rand in one run", "Never stumble for 2 km"), with toast popup
+- **Mystery boxes:** found in runs or bought: Rand, power-up upgrades, outfit pieces or Golden Medals
+- **Head Start** and **Second Chance** (continue after being caught) as items bought with Rand, no real money
+- **Shop:** tabs for Characters, Outfits, Power-up upgrades, Items
+- **Stats and local leaderboard:** top-10 runs with player name, character, score, distance, zone
+- **Screens:** Loading → Name your runner (first time) → Main Menu (Play, Characters, Shop, Missions, Achievements, Profile, Settings) → Run/HUD → Pause → Game Over (score, XP gained, missions progress, new record) → back to menu
+- **Tutorial:** first run shows swipe/key hints for lane, jump and slide, then marks itself done
+
+### Saving (localStorage)
+- Bump to **`lazitrail_save_v2`** with a **tested migration from v1**. Add player name, level/XP, owned and selected characters and outfits, achievements, mission state, login streak, Golden Medals, items and quality setting.
+- Unit tests for unlock rules, XP/level curve, mission rotation, streak logic and save migration
+
+## PHASE 5 — Power-ups, polish and deploy
+- All 4 power-ups (Coin Magnet, Energy Drink Boost, Super Spikes, 2x Score) with realistic models, HUD timers and shop upgrades
+- Performance pass on real phones (draw calls, texture memory, shader warm-up to avoid stutters)
+- PWA (manifest + service worker) with an **"Install Lazi Trail" button** in the menu
+- SEO and meta tags, Open Graph image, favicon
+- **README.md:** gameplay GIF, live link, features, controls, tech stack, architecture diagram, key technical challenges and solutions (chunk streaming, pooling, chase logic, save migration), how to run it, credits
+- Cloudflare Pages deploy (build command `npm run build`, output `dist`)
+- Final cleanup, all tests passing, credit line "Built by Lazarus Chitsuro" → GitHub
