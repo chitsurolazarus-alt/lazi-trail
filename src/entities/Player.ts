@@ -4,6 +4,7 @@ import { clamp, damp } from '../core/math';
 import type { EventBus } from '../core/EventBus';
 import type { GameEvents } from '../core/events';
 import type { PlayerBox } from '../systems/Collision';
+import type { QualityProfile } from '../config/quality';
 import { buildLaziGeometries, createModelMaterial, type LaziGeometries } from './models';
 
 const P = CONFIG.player;
@@ -49,7 +50,10 @@ export class Player {
   });
   private readonly shadowGeometry = new THREE.CircleGeometry(0.5, 16).rotateX(-Math.PI / 2);
 
-  constructor(private readonly bus: EventBus<GameEvents>) {
+  constructor(
+    private readonly bus: EventBus<GameEvents>,
+    profile: QualityProfile,
+  ) {
     this.geometries = buildLaziGeometries();
     const { body, leg, arm } = this.geometries;
 
@@ -64,6 +68,9 @@ export class Player {
     this.root.add(this.visual);
 
     this.shadow = new THREE.Mesh(this.shadowGeometry, this.shadowMaterial);
+    // A real shadow map replaces the blob; otherwise the blob keeps jumps readable.
+    this.shadow.visible = profile.shadows !== 'map';
+    if (profile.shadows === 'map') this.visual.traverse((o) => (o.castShadow = true));
     this.shadow.position.y = 0.03;
     this.root.add(this.shadow);
     // The shadow must stay on the ground while `root` lifts off during a jump.

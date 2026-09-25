@@ -10,51 +10,81 @@ export interface ObstacleInstance {
   s: number;
   /** World x of the obstacle's centre. */
   x: number;
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   /** Already resolved (stumbled on); ignored by further collision tests. */
   hit: boolean;
 }
 
-const KINDS = Object.keys(OBSTACLE_DEFS) as ObstacleKind[];
+/** Supplies the visual for each obstacle kind (primitive shapes on Low, detailed models above). */
+export interface ObstacleModels {
+  /** A fresh, poolable object for `kind`. Geometry/materials should be shared, not cloned. */
+  create(kind: ObstacleKind): THREE.Object3D;
+  dispose(): void;
+}
 
-/** Pools one mesh set per obstacle kind; geometry and material are shared by every instance. */
-export class ObstaclePool {
+/** Phase 1 look: one vertex-coloured mesh per kind. Also the Low-quality fallback. */
+export class PrimitiveObstacleModels implements ObstacleModels {
   private readonly material = createModelMaterial();
   private readonly geometries = new Map<ObstacleKind, THREE.BufferGeometry>();
-  private readonly pools = new Map<ObstacleKind, ObjectPool<THREE.Mesh>>();
 
-  constructor() {
-    for (const kind of KINDS) {
-      const geometry = buildObstacleGeometry(kind);
+  create(kind: ObstacleKind): THREE.Object3D {
+    let geometry = this.geometries.get(kind);
+    if (!geometry) {
+      geometry = buildObstacleGeometry(kind);
       this.geometries.set(kind, geometry);
+    }
+    return new THREE.Mesh(geometry, this.material);
+  }
+
+  dispose(): void {
+    for (const g of this.geometries.values()) g.dispose();
+    this.geometries.clear();
+    this.material.dispose();
+  }
+}
+
+const KINDS = Object.keys(OBSTACLE_DEFS) as ObstacleKind[];
+
+/** Pools objects per obstacle kind, so obstacles are never allocated during a run. */
+export class ObstaclePool {
+  private readonly pools = new Map<ObstacleKind, ObjectPool<THREE.Object3D>>();
+
+  constructor(
+    private readonly models: ObstacleModels,
+    castShadows = false,
+  ) {
+    for (const kind of KINDS) {
       this.pools.set(
         kind,
-        new ObjectPool<THREE.Mesh>(
-          () => new THREE.Mesh(geometry, this.material),
-          (mesh) => {
-            mesh.visible = false;
+        new ObjectPool<THREE.Object3D>(
+          () => {
+            const object = models.create(kind);
+            if (castShadows) object.traverse((o) => (o.castShadow = true));
+            return object;
           },
-          4,
+          (o) => {
+            o.visible = false;
+          },
+          3,
         ),
       );
     }
   }
 
-  acquire(kind: ObstacleKind): THREE.Mesh {
-    const mesh = this.pools.get(kind)?.acquire();
-    if (!mesh) throw new Error(`No pool for obstacle kind ${kind}`);
-    mesh.visible = true;
-    return mesh;
+  acquire(kind: ObstacleKind): THREE.Object3D {
+    const object = this.pools.get(kind)?.acquire();
+    if (!object) throw new Error(`No pool for obstacle kind ${kind}`);
+    object.visible = true;
+    return object;
   }
 
-  release(kind: ObstacleKind, mesh: THREE.Mesh): void {
-    mesh.removeFromParent();
-    this.pools.get(kind)?.release(mesh);
+  release(kind: ObstacleKind, object: THREE.Object3D): void {
+    object.removeFromParent();
+    this.pools.get(kind)?.release(object);
   }
 
   dispose(): void {
     for (const pool of this.pools.values()) pool.clear();
-    for (const geometry of this.geometries.values()) geometry.dispose();
-    this.material.dispose();
+    this.models.dispose();
   }
 }

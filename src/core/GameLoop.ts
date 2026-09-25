@@ -6,7 +6,7 @@ export class GameLoop {
 
   constructor(
     private readonly update: (dt: number) => void,
-    private readonly render: () => void,
+    private readonly render: (dt: number) => void,
     private readonly maxDelta = 1 / 20,
   ) {}
 
@@ -27,7 +27,7 @@ export class GameLoop {
     const dt = Math.min(this.maxDelta, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.update(dt);
-    this.render();
+    this.render(dt);
     this.rafId = requestAnimationFrame(this.tick);
   };
 }

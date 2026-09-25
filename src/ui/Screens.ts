@@ -1,16 +1,21 @@
 import { CREDIT } from '../config/gameConfig';
+import { QUALITY_LEVELS, QUALITY_PROFILES, type QualityLevel } from '../config/quality';
 
 export interface RunSummary {
   score: number;
   distance: number;
   coins: number;
   zone: string;
+  best: number;
+  newRecord: boolean;
 }
 
 export interface ScreenHandlers {
   onStart: () => void;
   onResume: () => void;
   onRestart: () => void;
+  /** Player picked a graphics quality in Settings. */
+  onQuality: (level: QualityLevel) => void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -39,9 +44,10 @@ function creditLink(): HTMLAnchorElement {
   return a;
 }
 
-/** Minimal full-screen overlays: ready, paused, game over. (Full menu system arrives in Phase 3.) */
+/** Minimal full-screen overlays: ready, paused, game over, settings. */
 export class Screens {
   readonly element = el('div', 'screens');
+  private quality: QualityLevel = 'high';
 
   constructor(private readonly handlers: ScreenHandlers) {
     this.element.hidden = true;
@@ -52,11 +58,18 @@ export class Screens {
     this.element.replaceChildren();
   }
 
+  setQuality(level: QualityLevel): void {
+    this.quality = level;
+  }
+
   showReady(): void {
     const panel = this.open('Lazi Trail', 'Run the streets. Reach the stadium.');
     panel.append(
       this.controlsHint(),
-      this.actions(button('Play', this.handlers.onStart)),
+      this.actions(
+        button('Play', this.handlers.onStart),
+        button('Settings', () => this.showSettings(() => this.showReady()), true),
+      ),
       creditLink(),
     );
     this.focusPrimary();
@@ -75,9 +88,11 @@ export class Screens {
 
   showGameOver(summary: RunSummary): void {
     const panel = this.open('Game Over');
+    if (summary.newRecord) panel.append(el('p', 'record', 'New record!'));
     const stats = el('dl', 'summary');
     const rows: Array<[string, string]> = [
       ['Score', summary.score.toLocaleString()],
+      ['Best', summary.best.toLocaleString()],
       ['Distance', `${summary.distance} m`],
       ['Rand', String(summary.coins)],
       ['Zone', summary.zone],
@@ -89,6 +104,38 @@ export class Screens {
     }
     panel.append(stats, this.actions(button('Play again', this.handlers.onRestart)), creditLink());
     this.focusPrimary();
+  }
+
+  /** Graphics quality picker (Phase 4 grows this into the full Settings screen). */
+  showSettings(onBack: () => void): void {
+    const panel = this.open('Settings');
+    const group = el('div', 'radio-group');
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', 'Graphics quality');
+    for (const level of QUALITY_LEVELS) {
+      const profile = QUALITY_PROFILES[level];
+      const option = el('button', 'radio');
+      option.type = 'button';
+      option.setAttribute('role', 'radio');
+      option.setAttribute('aria-checked', String(level === this.quality));
+      option.append(
+        el('strong', undefined, profile.label),
+        el('span', undefined, profile.description),
+      );
+      option.addEventListener('click', () => {
+        this.quality = level;
+        for (const b of group.querySelectorAll('.radio')) b.setAttribute('aria-checked', 'false');
+        option.setAttribute('aria-checked', 'true');
+        this.handlers.onQuality(level);
+      });
+      group.append(option);
+    }
+    panel.append(
+      el('h2', 'section', 'Graphics quality'),
+      group,
+      this.actions(button('Back', onBack)),
+    );
+    group.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
   }
 
   private open(title: string, subtitle?: string): HTMLElement {
