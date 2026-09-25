@@ -1,0 +1,261 @@
+:root {
+  --orange: #ff7a1a;
+  --blue: #0b2a5b;
+  --offwhite: #f6f3ea;
+  --gutter: max(14px, env(safe-area-inset-left));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--blue);
+  overscroll-behavior: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+.game-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  color: var(--offwhite);
+  font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+}
+
+.game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------------------------------------------------------------- HUD */
+
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: max(12px, env(safe-area-inset-top)) var(--gutter) 0;
+  text-shadow:
+    0 2px 0 rgba(11, 42, 91, 0.9),
+    0 0 8px rgba(11, 42, 91, 0.5);
+}
+
+.hud[hidden] {
+  display: none;
+}
+
+.hud-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hud-right {
+  align-items: flex-end;
+  padding-right: 52px;
+}
+
+.hud-stat {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+
+.hud-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.hud-score .hud-value {
+  font-size: clamp(28px, 6vw, 44px);
+  font-weight: 800;
+}
+
+.hud-coins .hud-value {
+  font-size: clamp(20px, 4vw, 28px);
+  font-weight: 700;
+  color: #ffc21a;
+}
+
+.hud-distance .hud-value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.hud-mult {
+  background: var(--orange);
+  color: var(--blue);
+  font-weight: 900;
+  font-size: 20px;
+  padding: 2px 12px;
+  border-radius: 999px;
+  text-shadow: none;
+}
+
+.hud-zone {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hud-pause {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: var(--gutter);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--offwhite);
+  background: rgba(11, 42, 91, 0.7);
+  color: var(--offwhite);
+  font-weight: 900;
+  letter-spacing: -1px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* ------------------------------------------------------------ Screens */
+
+.screens {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: radial-gradient(circle at center, rgba(11, 42, 91, 0.55), rgba(11, 42, 91, 0.9));
+}
+
+.screens[hidden] {
+  display: none;
+}
+
+.panel {
+  width: min(420px, 100%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(40px, 11vw, 64px);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--orange);
+  text-shadow: 0 4px 0 #061a3a;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 18px;
+}
+
+.controls {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  opacity: 0.92;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn {
+  font: inherit;
+  font-size: 20px;
+  font-weight: 800;
+  padding: 12px 34px;
+  min-width: 150px;
+  border: 3px solid var(--offwhite);
+  border-radius: 14px;
+  background: var(--orange);
+  color: var(--blue);
+  cursor: pointer;
+  box-shadow: 0 5px 0 #b34e00;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--offwhite);
+  box-shadow: none;
+}
+
+.btn:hover {
+  filter: brightness(1.08);
+}
+
+.btn:active {
+  transform: translateY(2px);
+}
+
+.btn:focus-visible,
+.credit:focus-visible,
+.hud-pause:focus-visible {
+  outline: 3px solid var(--offwhite);
+  outline-offset: 3px;
+}
+
+.summary {
+  margin: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 18px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: rgba(246, 243, 234, 0.12);
+  border-radius: 10px;
+}
+
+.summary dt {
+  opacity: 0.85;
+}
+
+.summary dd {
+  margin: 0;
+  font-weight: 800;
+}
+
+.credit {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--offwhite);
+  opacity: 0.85;
+}
+
+.credit:hover {
+  color: var(--orange);
+  opacity: 1;
+}
